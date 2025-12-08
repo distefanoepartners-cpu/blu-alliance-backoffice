@@ -68,10 +68,21 @@ CONTATTI:
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { message, conversationHistory = [] } = body
+    const { message, conversationHistory = [], userInfo = null } = body
 
     if (!message) {
-      return NextResponse.json({ error: 'Messaggio richiesto' }, { status: 400 })
+      return NextResponse.json({ error: 'Messaggio richiesto' }, { status: 400, headers: corsHeaders })
+    }
+
+    // Aggiungi info utente al context se disponibili
+    let userContext = '';
+    if (userInfo && (userInfo.nome || userInfo.email || userInfo.telefono)) {
+      userContext = `\n\nINFORMAZIONI UTENTE:
+Nome: ${userInfo.nome || 'Non fornito'}
+Email: ${userInfo.email || 'Non fornita'}
+Telefono: ${userInfo.telefono || 'Non fornito'}
+
+Usa queste informazioni per personalizzare la conversazione. Se hai il nome, chiamalo per nome.`;
     }
 
     // Recupera dati dal database per contestualizzare la risposta
@@ -132,7 +143,7 @@ export async function POST(request: NextRequest) {
       {
         role: 'user',
         content: `DATI DISPONIBILI:
-${JSON.stringify(contextData, null, 2)}
+${JSON.stringify(contextData, null, 2)}${userContext}
 
 DOMANDA CLIENTE:
 ${message}`
@@ -150,6 +161,61 @@ ${message}`
     const assistantMessage = response.content[0].type === 'text' 
       ? response.content[0].text 
       : 'Mi dispiace, non ho potuto elaborare la risposta.'
+
+    // Salva lead se è il primo messaggio e ha fornito contatti
+    if (conversationHistory.length === 0 && userInfo && (userInfo.email || userInfo.nome)) {
+      try {
+        const { data: newLead } = await supabase
+          .from('chatbot_leads')
+          .insert([{
+            nome: userInfo.nome || null,
+            cognome: null,
+            email: userInfo.email || null,
+            telefono: userInfo.telefono || null,
+            messaggio: message,
+            conversazione_json: [
+              { role: 'user', content: message },
+              { role: 'assistant', content: assistantMessage }
+            ],
+            stato: 'nuovo'
+          }])
+          .select()
+          .single()
+        
+        console.log('Lead salvato:', newLead?.id)
+      } catch (leadError) {
+        console.error('Errore salvataggio lead:', leadError)
+        // Non bloccare la conversazione se il salvataggio lead fallisce
+      }
+    } else if (conversationHistory.length > 0 && userInfo && userInfo.email) {
+      // Aggiorna conversazione se il lead esiste già (conversazione continua)
+      try {
+        const { data: existingLead } = await supabase
+          .from('chatbot_leads')
+          .select('id')
+          .eq('email', userInfo.email)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
+        
+        if (existingLead) {
+          await supabase
+            .from('chatbot_leads')
+            .update({
+              conversazione_json: [
+                ...conversationHistory,
+                { role: 'user', content: message },
+                { role: 'assistant', content: assistantMessage }
+              ],
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingLead.id)
+        }
+      } catch (updateError) {
+        console.error('Errore aggiornamento lead:', updateError)
+        // Non bloccare la conversazione
+      }
+    }
 
     return NextResponse.json({
       message: assistantMessage,
