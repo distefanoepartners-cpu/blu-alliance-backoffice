@@ -9,6 +9,17 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+// CORS Headers
+const corsHeaders = {
+  'Access-Control-Allow-Origin': 'https://blualliancegroup.com',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders })
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -71,13 +82,13 @@ export async function POST(request: NextRequest) {
       message: disponibile 
         ? 'La data è disponibile!' 
         : `Attenzione: ci sono già ${prenotazioni?.length} prenotazioni per questa data.`
-    })
+    }, { headers: corsHeaders })
 
   } catch (error: any) {
     console.error('Errore verifica disponibilità:', error)
     return NextResponse.json(
       { error: 'Errore nella verifica disponibilità', details: error.message },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     )
   }
 }
@@ -126,13 +137,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       prenotazioni_per_data: prenotazioniPerData,
       totale_prenotazioni: prenotazioni?.length || 0
-    })
+    }, { headers: corsHeaders })
 
   } catch (error: any) {
     console.error('Errore recupero disponibilità:', error)
     return NextResponse.json(
       { error: 'Errore nel recupero disponibilità', details: error.message },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     )
   }
 }

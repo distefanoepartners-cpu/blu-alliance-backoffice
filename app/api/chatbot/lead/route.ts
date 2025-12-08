@@ -9,6 +9,17 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+// CORS Headers
+const corsHeaders = {
+  'Access-Control-Allow-Origin': 'https://blualliancegroup.com',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders })
+}
+
 // Tabella per salvare i lead generati dal chatbot
 // Puoi crearla in Supabase con questo schema:
 /*
@@ -84,7 +95,7 @@ export async function POST(request: NextRequest) {
       success: true,
       message: 'Richiesta ricevuta! Ti contatteremo presto.',
       lead_id: lead.id
-    })
+    }, { headers: corsHeaders })
 
   } catch (error: any) {
     console.error('Errore salvataggio lead:', error)
@@ -94,7 +105,7 @@ export async function POST(request: NextRequest) {
         error: 'Errore nel salvataggio della richiesta', 
         details: error.message 
       },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     )
   }
 }
@@ -120,13 +131,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       leads: leads || [],
       count: leads?.length || 0
-    })
+    }, { headers: corsHeaders })
 
   } catch (error: any) {
     console.error('Errore recupero lead:', error)
     return NextResponse.json(
       { error: 'Errore nel recupero dei lead', details: error.message },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     )
   }
 }
