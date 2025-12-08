@@ -21,7 +21,7 @@ export default function PrenotazioniPage() {
   const [nuovoCliente, setNuovoCliente] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [sendingEmail, setSendingEmail] = useState(false)
-  
+
   const [formData, setFormData] = useState({
     cliente_id: '',
     nuovo_cliente_nome: '',
@@ -85,8 +85,8 @@ export default function PrenotazioniPage() {
     if (formData.servizio_id && !editingId) {
       const servizio = servizi.find(s => s.id === formData.servizio_id)
       if (servizio) {
-        setFormData(prev => ({ 
-          ...prev, 
+        setFormData(prev => ({
+          ...prev,
           imbarcazione_id: servizio.imbarcazione_id || '',
           luogo_imbarco: servizio.luogo_imbarco || '',
           ora_imbarco: servizio.ora_imbarco || ''
@@ -110,7 +110,7 @@ export default function PrenotazioniPage() {
 
       const { data: serviziData } = await supabase
         .from('servizi')
-        .select('id, nome, prezzo_base, caparra_percentuale, imbarcazione_id, luogo_imbarco, ora_imbarco')
+        .select('id, nome, prezzo_base, prezzo_per_persona, caparra_percentuale, imbarcazione_id, luogo_imbarco, ora_imbarco')
         .eq('attivo', true)
 
       const { data: imbarcazioniData } = await supabase
@@ -153,7 +153,7 @@ export default function PrenotazioniPage() {
       })
 
       const result = await response.json()
-      
+
       if (!response.ok) {
         throw new Error(result.error || 'Errore invio email')
       }
@@ -169,7 +169,7 @@ export default function PrenotazioniPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    
+
     try {
       let clienteId = formData.cliente_id
 
@@ -198,7 +198,9 @@ export default function PrenotazioniPage() {
       const servizio = servizi.find(s => s.id === formData.servizio_id)
       if (!servizio) throw new Error('Servizio non trovato')
 
-      const prezzoTotale = servizio.prezzo_base
+      const prezzoTotale = servizio.prezzo_per_persona
+        ? servizio.prezzo_base * formData.numero_persone
+        : servizio.prezzo_base
 
       const dataToSave: any = {
         cliente_id: clienteId,
@@ -223,7 +225,7 @@ export default function PrenotazioniPage() {
         dataToSave.metodo_pagamento_caparra = pagamentiForm.metodo_pagamento_caparra
         dataToSave.saldo_ricevuto = Number(pagamentiForm.saldo_ricevuto)
         dataToSave.metodo_pagamento_saldo = pagamentiForm.metodo_pagamento_saldo
-        
+
         if (pagamentiForm.caparra_ricevuta > 0) {
           dataToSave.data_pagamento_caparra = new Date().toISOString()
         }
@@ -234,7 +236,7 @@ export default function PrenotazioniPage() {
         // Calcola se completamente pagato
         const totaleRicevuto = Number(pagamentiForm.caparra_ricevuta) + Number(pagamentiForm.saldo_ricevuto)
         const statoOriginale = prenotazioni.find(p => p.id === editingId)?.stato
-        
+
         if (totaleRicevuto >= prezzoTotale && statoOriginale === 'in_attesa') {
           dataToSave.stato = 'confermata'
           emailInviata = true
@@ -247,7 +249,7 @@ export default function PrenotazioniPage() {
           .eq('id', editingId)
 
         if (error) throw error
-        
+
         // Se passa a confermata, invia email
         if (emailInviata) {
           const { data: prenotazioneAggiornata } = await supabase
@@ -255,7 +257,7 @@ export default function PrenotazioniPage() {
             .select('*')
             .eq('id', editingId)
             .single()
-          
+
           if (prenotazioneAggiornata) {
             await sendConfirmationEmail(prenotazioneAggiornata)
           }
@@ -336,7 +338,7 @@ export default function PrenotazioniPage() {
           .select('*')
           .eq('id', prenotazioneId)
           .single()
-        
+
         if (prenotazione) {
           await sendConfirmationEmail(prenotazione)
           toast.success('Stato aggiornato! Email inviata ✅')
@@ -344,7 +346,7 @@ export default function PrenotazioniPage() {
       } else {
         toast.success('Stato aggiornato!')
       }
-      
+
       setTimeout(() => {
         loadData()
       }, 500)
@@ -355,11 +357,11 @@ export default function PrenotazioniPage() {
 
   function openPagamentoModal(prenotazione: any, tipo: 'caparra' | 'saldo') {
     setPrenotazioneSelezionata(prenotazione)
-    
+
     // Calcola quanto resta da pagare
     const daRicevere = Number(prenotazione.prezzo_totale) - Number(prenotazione.caparra_ricevuta || 0) - Number(prenotazione.saldo_ricevuta || 0)
-    
-    const importoSuggerito = tipo === 'caparra' 
+
+    const importoSuggerito = tipo === 'caparra'
       ? daRicevere  // Suggerisci tutto quello che manca
       : daRicevere  // Suggerisci tutto quello che manca
 
@@ -369,7 +371,7 @@ export default function PrenotazioniPage() {
       metodo: 'contanti',
       note: ''
     })
-    
+
     setShowPagamentoModal(true)
   }
 
@@ -394,12 +396,12 @@ export default function PrenotazioniPage() {
       }
 
       // Calcola il nuovo saldo totale
-      const nuovaCaparraRicevuta = pagamentoData.tipo === 'caparra' 
-        ? updates.caparra_ricevuta 
+      const nuovaCaparraRicevuta = pagamentoData.tipo === 'caparra'
+        ? updates.caparra_ricevuta
         : (prenotazioneSelezionata.caparra_ricevuta || 0)
-      
-      const nuovoSaldoRicevuto = pagamentoData.tipo === 'saldo' 
-        ? updates.saldo_ricevuto 
+
+      const nuovoSaldoRicevuto = pagamentoData.tipo === 'saldo'
+        ? updates.saldo_ricevuto
         : (prenotazioneSelezionata.saldo_ricevuto || 0)
 
       const totaleRicevuto = nuovaCaparraRicevuta + nuovoSaldoRicevuto
@@ -426,7 +428,7 @@ export default function PrenotazioniPage() {
           .select('*')
           .eq('id', prenotazioneSelezionata.id)
           .single()
-        
+
         if (prenotazioneAggiornata) {
           await sendConfirmationEmail(prenotazioneAggiornata)
           toast.success('Pagamento registrato! Prenotazione confermata e email inviata ✅')
@@ -434,7 +436,7 @@ export default function PrenotazioniPage() {
       } else {
         toast.success('Pagamento registrato!')
       }
-      
+
       // Aspetta che la vista si aggiorni prima di ricaricare
       setTimeout(() => {
         loadData()
@@ -496,7 +498,7 @@ export default function PrenotazioniPage() {
     const headers = ['Codice', 'Cliente', 'Email', 'Servizio', 'Data', 'Persone', 'Lingua', 'Totale', 'Acconto Ricevuto', 'Saldo Ricevuto', 'Da Ricevere', 'Stato']
     const rows = filteredPrenotazioni.map(p => {
       const daRicevere = Number(p.prezzo_totale) - Number(p.caparra_ricevuta || 0) - Number(p.saldo_ricevuto || 0)
-      
+
       return [
         p.codice_prenotazione,
         p.cliente_nome_completo,
@@ -560,7 +562,7 @@ export default function PrenotazioniPage() {
           oggi.setHours(0, 0, 0, 0)
           const domani = new Date(oggi)
           domani.setDate(domani.getDate() + 1)
-          
+
           const oggiCount = filteredPrenotazioni.filter(p => {
             const dataServizio = new Date(p.data_servizio)
             dataServizio.setHours(0, 0, 0, 0)
@@ -661,7 +663,7 @@ export default function PrenotazioniPage() {
               ) : (
                 filteredPrenotazioni.map((prenotazione) => {
                   const daRicevere = Number(prenotazione.prezzo_totale) - Number(prenotazione.caparra_ricevuta || 0) - Number(prenotazione.saldo_ricevuto || 0)
-                  
+
                   return (
                     <tr key={prenotazione.id} className="hover:bg-gray-50">
                       <td className="px-3 md:px-6 py-4 whitespace-nowrap text-xs md:text-sm font-medium text-gray-900">
@@ -693,9 +695,8 @@ export default function PrenotazioniPage() {
                           <div className="text-xs text-green-600">
                             Saldo ricevuto: €{Number(prenotazione.saldo_ricevuto || 0).toFixed(2)}
                           </div>
-                          <div className={`text-xs font-medium border-t pt-1 mt-1 ${
-                            daRicevere === 0 ? 'text-green-600' : 'text-red-600'
-                          }`}>
+                          <div className={`text-xs font-medium border-t pt-1 mt-1 ${daRicevere === 0 ? 'text-green-600' : 'text-red-600'
+                            }`}>
                             Da ricevere: €{daRicevere.toFixed(2)}
                           </div>
                         </div>
@@ -861,9 +862,16 @@ export default function PrenotazioniPage() {
                   ))}
                 </select>
                 {servizioSelezionato && (
-                  <p className="text-sm text-gray-500 mt-1">
-                    Prezzo: €{servizioSelezionato.prezzo_base} | Caparra suggerita: {servizioSelezionato.caparra_percentuale}% (€{(servizioSelezionato.prezzo_base * servizioSelezionato.caparra_percentuale / 100).toFixed(2)})
-                  </p>
+                  <div className="text-sm text-gray-500 mt-1 space-y-1">
+                    <p>
+                      Prezzo base: €{servizioSelezionato.prezzo_base}
+                      {servizioSelezionato.prezzo_per_persona && <span className="text-blue-600 font-medium"> × {formData.numero_persone} persone = €{(servizioSelezionato.prezzo_base * formData.numero_persone).toFixed(2)}</span>}
+                    </p>
+                    <p>
+                      Caparra suggerita: {servizioSelezionato.caparra_percentuale}%
+                      (€{((servizioSelezionato.prezzo_per_persona ? servizioSelezionato.prezzo_base * formData.numero_persone : servizioSelezionato.prezzo_base) * servizioSelezionato.caparra_percentuale / 100).toFixed(2)})
+                    </p>
+                  </div>
                 )}
               </div>
 
@@ -912,14 +920,20 @@ export default function PrenotazioniPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Luogo Imbarco</label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.luogo_imbarco}
                     onChange={(e) => setFormData({ ...formData, luogo_imbarco: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    placeholder="es. Porto di Salerno, Molo Manfredi"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Pre-compilato dal servizio, modificabile</p>
+                  >
+                    <option value="">Seleziona porto</option>
+                    <option value="Masuccio Salernitano, Salerno">Masuccio Salernitano, Salerno</option>
+                    <option value="Molo Manfredi, Salerno">Molo Manfredi, Salerno</option>
+                    <option value="Vietri sul Mare">Vietri sul Mare</option>
+                    <option value="Cetara">Cetara</option>
+                    <option value="Maiori">Maiori</option>
+                    <option value="Minori">Minori</option>
+                    <option value="Amalfi">Amalfi</option>
+                  </select>
                 </div>
 
                 <div>
@@ -977,14 +991,14 @@ export default function PrenotazioniPage() {
               {editingId && servizioSelezionato && (
                 <div className="border-t pt-4">
                   <h3 className="text-lg font-semibold text-gray-900 mb-3">Gestione Pagamenti</h3>
-                  
+
                   <div className="bg-gray-50 p-4 rounded-lg space-y-4">
                     {/* Riepilogo importi */}
                     <div className="bg-white p-3 rounded border border-gray-200">
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-sm font-medium text-gray-700">Prezzo Totale:</span>
                         <span className="text-lg font-bold text-gray-900">
-                          €{Number(servizioSelezionato.prezzo_base).toFixed(2)}
+                          €{(servizioSelezionato.prezzo_per_persona ? servizioSelezionato.prezzo_base * formData.numero_persone : servizioSelezionato.prezzo_base).toFixed(2)}
                         </span>
                       </div>
                       <div className="text-xs text-gray-500 italic">
@@ -1064,12 +1078,11 @@ export default function PrenotazioniPage() {
                       </div>
                       <div className="flex justify-between items-center mt-1">
                         <span className="text-sm font-semibold text-gray-700">Da Ricevere:</span>
-                        <span className={`text-lg font-bold ${
-                          (servizioSelezionato.prezzo_base - (Number(pagamentiForm.caparra_ricevuta) + Number(pagamentiForm.saldo_ricevuto))) === 0
+                        <span className={`text-lg font-bold ${((servizioSelezionato.prezzo_per_persona ? servizioSelezionato.prezzo_base * formData.numero_persone : servizioSelezionato.prezzo_base) - (Number(pagamentiForm.caparra_ricevuta) + Number(pagamentiForm.saldo_ricevuto))) === 0
                             ? 'text-green-600'
                             : 'text-red-600'
-                        }`}>
-                          €{(servizioSelezionato.prezzo_base - (Number(pagamentiForm.caparra_ricevuta) + Number(pagamentiForm.saldo_ricevuto))).toFixed(2)}
+                          }`}>
+                          €{((servizioSelezionato.prezzo_per_persona ? servizioSelezionato.prezzo_base * formData.numero_persone : servizioSelezionato.prezzo_base) - (Number(pagamentiForm.caparra_ricevuta) + Number(pagamentiForm.saldo_ricevuto))).toFixed(2)}
                         </span>
                       </div>
                     </div>

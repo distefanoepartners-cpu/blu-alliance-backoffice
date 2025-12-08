@@ -8,6 +8,7 @@ export default function AmministratoriPage() {
   const [amministratori, setAmministratori] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -40,6 +41,31 @@ export default function AmministratoriPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
+    // Se stiamo modificando
+    if (editingId) {
+      try {
+        const { error } = await supabase
+          .from('amministratori')
+          .update({
+            nome: formData.nome,
+            cognome: formData.cognome,
+            ruolo: formData.ruolo
+          })
+          .eq('id', editingId)
+
+        if (error) throw error
+
+        toast.success('Amministratore aggiornato!')
+        resetForm()
+        loadAmministratori()
+      } catch (error: any) {
+        toast.error('Errore nell\'aggiornamento')
+        console.error('Errore:', error)
+      }
+      return
+    }
+
+    // Creazione nuovo amministratore
     if (formData.password.length < 6) {
       toast.error('La password deve essere di almeno 6 caratteri')
       return
@@ -78,7 +104,6 @@ export default function AmministratoriPage() {
         }])
 
       if (adminError) {
-        // Se l'inserimento fallisce, elimina l'utente da auth
         console.error('Errore inserimento admin:', adminError)
         throw new Error('Errore nella creazione dell\'amministratore')
       }
@@ -86,7 +111,6 @@ export default function AmministratoriPage() {
       toast.success('Amministratore creato! L\'utente riceverà un\'email di conferma.')
       resetForm()
       
-      // Ricarica dopo 1 secondo per dare tempo al database
       setTimeout(() => {
         loadAmministratori()
       }, 1000)
@@ -100,6 +124,37 @@ export default function AmministratoriPage() {
       } else {
         toast.error(error.message || 'Errore nella creazione')
       }
+    }
+  }
+
+  function handleEdit(admin: any) {
+    setEditingId(admin.id)
+    setFormData({
+      email: admin.email,
+      password: '',
+      nome: admin.nome || '',
+      cognome: admin.cognome || '',
+      ruolo: admin.ruolo || 'operatore'
+    })
+    setShowModal(true)
+  }
+
+  async function handleDelete(id: string, email: string) {
+    if (!confirm(`Sei sicuro di voler eliminare l'amministratore ${email}?`)) return
+
+    try {
+      const { error } = await supabase
+        .from('amministratori')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+
+      toast.success('Amministratore eliminato!')
+      loadAmministratori()
+    } catch (error: any) {
+      toast.error('Errore nell\'eliminazione')
+      console.error('Errore:', error)
     }
   }
 
@@ -143,6 +198,7 @@ export default function AmministratoriPage() {
       cognome: '',
       ruolo: 'operatore'
     })
+    setEditingId(null)
     setShowModal(false)
   }
 
@@ -217,16 +273,30 @@ export default function AmministratoriPage() {
                       </span>
                     </td>
                     <td className="px-4 md:px-6 py-4 whitespace-nowrap">
-                      <button
-                        onClick={() => toggleAttivo(admin.id, admin.attivo)}
-                        className={`px-3 py-1 text-xs rounded-lg ${
-                          admin.attivo
-                            ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                            : 'bg-green-100 text-green-700 hover:bg-green-200'
-                        }`}
-                      >
-                        {admin.attivo ? 'Disattiva' : 'Attiva'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleEdit(admin)}
+                          className="px-3 py-1 text-xs rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200"
+                        >
+                          Modifica
+                        </button>
+                        <button
+                          onClick={() => toggleAttivo(admin.id, admin.attivo)}
+                          className={`px-3 py-1 text-xs rounded-lg ${
+                            admin.attivo
+                              ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                              : 'bg-green-100 text-green-700 hover:bg-green-200'
+                          }`}
+                        >
+                          {admin.attivo ? 'Disattiva' : 'Attiva'}
+                        </button>
+                        <button
+                          onClick={() => handleDelete(admin.id, admin.email)}
+                          className="px-3 py-1 text-xs rounded-lg bg-red-100 text-red-700 hover:bg-red-200"
+                        >
+                          Elimina
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -240,7 +310,9 @@ export default function AmministratoriPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full">
             <div className="p-6 border-b flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-gray-900">Nuovo Amministratore</h2>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {editingId ? 'Modifica Amministratore' : 'Nuovo Amministratore'}
+              </h2>
               <button onClick={resetForm} className="text-gray-400 hover:text-gray-600 text-2xl">
                 ×
               </button>
@@ -270,29 +342,44 @@ export default function AmministratoriPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  required
-                />
-              </div>
+              {!editingId && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      required
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  placeholder="Minimo 6 caratteri"
-                  minLength={6}
-                  required
-                />
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
+                    <input
+                      type="password"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      placeholder="Minimo 6 caratteri"
+                      minLength={6}
+                      required
+                    />
+                  </div>
+                </>
+              )}
+
+              {editingId && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <p className="text-sm text-gray-600">
+                    <strong>Email:</strong> {formData.email}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    L&apos;email non può essere modificata
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Ruolo *</label>
@@ -305,15 +392,17 @@ export default function AmministratoriPage() {
                   <option value="admin">Admin</option>
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
-                  Admin: accesso completo | Operatore: gestione prenotazioni
+                  Admin: accesso completo | Operatore: solo disponibilità
                 </p>
               </div>
 
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-              <p className="text-xs text-yellow-800">
-                 ℹ️ L&apos;utente riceverà un&apos;email di conferma per attivare l&apos;account
-             </p>
-             </div>
+              {!editingId && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                  <p className="text-xs text-yellow-800">
+                    ℹ️ L&apos;utente riceverà un&apos;email di conferma per attivare l&apos;account
+                  </p>
+                </div>
+              )}
 
               <div className="flex gap-3 pt-4">
                 <button
@@ -327,7 +416,7 @@ export default function AmministratoriPage() {
                   type="submit"
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
-                  Crea Amministratore
+                  {editingId ? 'Aggiorna' : 'Crea'} Amministratore
                 </button>
               </div>
             </form>

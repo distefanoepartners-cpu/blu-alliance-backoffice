@@ -10,6 +10,7 @@ export default function ServiziPage() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
   const [formData, setFormData] = useState({
     nome: '',
     descrizione: '',
@@ -24,7 +25,8 @@ export default function ServiziPage() {
     max_persone: '',
     luogo_imbarco: '',
     ora_imbarco: '',
-    attivo: true
+    attivo: true,
+    immagine_principale: ''
   })
 
   useEffect(() => {
@@ -61,6 +63,35 @@ export default function ServiziPage() {
     }
   }
 
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `servizi/${Date.now()}.${fileExt}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('immagini')
+        .upload(fileName, file)
+
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('immagini')
+        .getPublicUrl(fileName)
+
+      setFormData({ ...formData, immagine_principale: publicUrl })
+      toast.success('Immagine caricata!')
+    } catch (error: any) {
+      toast.error('Errore upload immagine')
+      console.error('Errore:', error)
+    } finally {
+      setUploading(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     
@@ -85,7 +116,8 @@ export default function ServiziPage() {
         max_persone: formData.max_persone ? Number(formData.max_persone) : null,
         luogo_imbarco: formData.luogo_imbarco || null,
         ora_imbarco: formData.ora_imbarco || null,
-        attivo: formData.attivo
+        attivo: formData.attivo,
+        immagine_principale: formData.immagine_principale || null
       }
 
       if (editingId) {
@@ -129,7 +161,8 @@ export default function ServiziPage() {
       max_persone: servizio.max_persone?.toString() || '',
       luogo_imbarco: servizio.luogo_imbarco || '',
       ora_imbarco: servizio.ora_imbarco || '',
-      attivo: servizio.attivo
+      attivo: servizio.attivo,
+      immagine_principale: servizio.immagine_principale || ''
     })
     setShowModal(true)
   }
@@ -168,7 +201,8 @@ export default function ServiziPage() {
       max_persone: '',
       luogo_imbarco: '',
       ora_imbarco: '',
-      attivo: true
+      attivo: true,
+      immagine_principale: ''
     })
     setEditingId(null)
     setShowModal(false)
@@ -198,6 +232,7 @@ export default function ServiziPage() {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Immagine</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nome</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prezzo</th>
@@ -211,7 +246,7 @@ export default function ServiziPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {servizi.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
                     <div className="text-4xl mb-3">🚢</div>
                     <p>Nessun servizio disponibile</p>
                   </td>
@@ -219,6 +254,19 @@ export default function ServiziPage() {
               ) : (
                 servizi.map((servizio) => (
                   <tr key={servizio.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {servizio.immagine_principale ? (
+                        <img 
+                          src={servizio.immagine_principale} 
+                          alt={servizio.nome}
+                          className="w-12 h-12 object-cover rounded-lg"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-xl">
+                          🚤
+                        </div>
+                      )}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">{servizio.nome}</div>
                       {servizio.descrizione && (
@@ -309,15 +357,20 @@ export default function ServiziPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Tipo</label>
-                  <input
-                    type="text"
-                    value={formData.tipo}
-                    onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    placeholder="es. Tour, Transfer, Escursione"
-                  />
-                </div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">Tipo *</label>
+  <select
+    value={formData.tipo}
+    onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
+    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+    required
+  >
+    <option value="">Seleziona tipo</option>
+    <option value="tour">Tour</option>
+    <option value="tour_collettivo">Tour Collettivo</option>
+    <option value="taxi_boat">Taxi Boat</option>
+    <option value="locazione">Locazione</option>
+  </select>
+</div>
               </div>
 
               <div>
@@ -428,6 +481,39 @@ export default function ServiziPage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   />
                 </div>
+              </div>
+
+              {/* Immagine Principale */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Immagine Principale</label>
+                {formData.immagine_principale && (
+                  <div className="mb-2">
+                    <img 
+                      src={formData.immagine_principale} 
+                      alt="Anteprima" 
+                      className="w-32 h-32 object-cover rounded-lg"
+                    />
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  disabled={uploading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+                {uploading && (
+                  <p className="text-sm text-blue-600 mt-1">Caricamento in corso...</p>
+                )}
+                {formData.immagine_principale && (
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, immagine_principale: '' })}
+                    className="mt-2 text-sm text-red-600 hover:text-red-800"
+                  >
+                    Rimuovi immagine
+                  </button>
+                )}
               </div>
 
               <div>

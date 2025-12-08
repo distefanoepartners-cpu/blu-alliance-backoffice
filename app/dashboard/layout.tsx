@@ -13,6 +13,7 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const [user, setUser] = useState<any>(null)
+  const [userRole, setUserRole] = useState<string>('operatore')
   const [loading, setLoading] = useState(true)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -29,13 +30,62 @@ export default function DashboardLayout({
     }
 
     setUser(session.user)
+
+    // Carica il ruolo dell'utente dalla tabella amministratori (case-insensitive)
+    if (session.user.email) {
+      const { data: adminData } = await supabase
+        .from('amministratori')
+        .select('ruolo')
+        .ilike('email', session.user.email)
+        .eq('attivo', true)
+        .maybeSingle()
+
+      if (adminData && adminData.ruolo) {
+        setUserRole(adminData.ruolo)
+      }
+    }
+
     setLoading(false)
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: 'local' })
     router.push('/')
   }
+
+  // Menu completo con ruoli
+  const allMenuItems = [
+    { href: '/dashboard/disponibilita', label: 'Disponibilità', icon: '✅', roles: ['admin', 'operatore'] },
+    { href: '/dashboard/statistiche', label: 'Statistiche', icon: '📊', roles: ['admin'] },
+    { href: '/dashboard/prenotazioni', label: 'Prenotazioni', icon: '📋', roles: ['admin'] },
+    { href: '/dashboard/calendario', label: 'Calendario', icon: '📅', roles: ['admin'] },
+    { href: '/dashboard/clienti', label: 'Clienti', icon: '👥', roles: ['admin'] },
+    { href: '/dashboard/servizi', label: 'Servizi', icon: '🎯', roles: ['admin'] },
+    { href: '/dashboard/imbarcazioni', label: 'Imbarcazioni', icon: '🚤', roles: ['admin'] },
+    { href: '/dashboard/fornitori', label: 'Fornitori', icon: '🏢', roles: ['admin'] },
+    { href: '/dashboard/blocchi', label: 'Blocchi', icon: '🚫', roles: ['admin'] },
+    { href: '/dashboard/amministratori', label: 'Amministratori', icon: '👤', roles: ['admin'] },
+  ]
+
+  // Filtra menu in base al ruolo
+  const menuItems = allMenuItems.filter(item => item.roles.includes(userRole))
+
+  const isActive = (href: string) => {
+    if (href === '/dashboard') {
+      return pathname === '/dashboard'
+    }
+    return pathname.startsWith(href)
+  }
+
+  // Verifica accesso alla pagina corrente
+  useEffect(() => {
+    if (!loading && userRole === 'operatore') {
+      const currentPage = allMenuItems.find(item => pathname.startsWith(item.href))
+      if (currentPage && !currentPage.roles.includes('operatore')) {
+        router.push('/dashboard/disponibilita')
+      }
+    }
+  }, [pathname, userRole, loading])
 
   if (loading) {
     return (
@@ -43,23 +93,6 @@ export default function DashboardLayout({
         <div className="text-gray-600">Caricamento...</div>
       </div>
     )
-  }
-
-  const menuItems = [
-    { href: '/dashboard', label: 'Dashboard', icon: '🏠' },
-    { href: '/dashboard/prenotazioni', label: 'Prenotazioni', icon: '📅' },
-    { href: '/dashboard/calendario', label: 'Calendario', icon: '📆' },
-    { href: '/dashboard/clienti', label: 'Clienti', icon: '👥' },
-    { href: '/dashboard/servizi', label: 'Servizi', icon: '📦' },
-    { href: '/dashboard/imbarcazioni', label: 'Imbarcazioni', icon: '🚤' },
-    { href: '/dashboard/amministratori', label: 'Amministratori', icon: '👔' },
-  ]
-
-  const isActive = (href: string) => {
-    if (href === '/dashboard') {
-      return pathname === '/dashboard'
-    }
-    return pathname.startsWith(href)
   }
 
   return (
@@ -110,6 +143,9 @@ export default function DashboardLayout({
                   {user?.email?.split('@')[0] || 'Utente'}
                 </p>
                 <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+                <p className={`text-xs font-medium mt-1 ${userRole === 'admin' ? 'text-purple-600' : 'text-green-600'}`}>
+                  {userRole === 'admin' ? '👑 Admin' : '👤 Operatore'}
+                </p>
               </div>
             </div>
             <button
@@ -157,7 +193,7 @@ export default function DashboardLayout({
       {mobileMenuOpen && (
         <div className="md:hidden fixed inset-0 z-50 bg-black bg-opacity-50" onClick={() => setMobileMenuOpen(false)}>
           <div className="fixed inset-y-0 right-0 w-64 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-col h-full p-6">
+            <div className="flex flex-col h-full p-6 overflow-y-auto">
               <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden">
@@ -212,6 +248,9 @@ export default function DashboardLayout({
                       {user?.email?.split('@')[0] || 'Utente'}
                     </p>
                     <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+                    <p className={`text-xs font-medium mt-1 ${userRole === 'admin' ? 'text-purple-600' : 'text-green-600'}`}>
+                      {userRole === 'admin' ? '👑 Admin' : '👤 Operatore'}
+                    </p>
                   </div>
                 </div>
                 <button

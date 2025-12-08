@@ -1,0 +1,301 @@
+// FILE: /app/api/chatbot/query/route.ts
+// Endpoint principale per le conversazioni del chatbot
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import Anthropic from '@anthropic-ai/sdk'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY!
+})
+
+// System prompt per il chatbot Blu Alliance
+const SYSTEM_PROMPT = `Sei l'assistente virtuale di Blu Alliance, un consorzio di turismo marittimo che opera dal Porto di Salerno.
+
+SERVIZI OFFERTI:
+- Tour in barca lungo la Costiera Amalfitana (Positano, Amalfi, Ravello)
+- Escursioni a Capri
+- Tour nel Cilento
+- Noleggio barche con e senza skipper
+- Water taxi
+- Tour collettivi
+
+CARATTERISTICHE:
+- Diverse categorie di imbarcazioni: Simple, Premium, Luxury
+- Barche con capacità da 6 a 12+ persone
+- Servizi personalizzabili
+- Punti di imbarco: Porto di Salerno (Masuccio Salernitano, Molo Manfredi), Vietri, Cetara, Maiori, Minori, Amalfi
+
+COMPORTAMENTO:
+- Rispondi in modo cordiale, professionale e conciso
+- Usa emoji occasionalmente per rendere la conversazione più amichevole 🚤
+- Chiedi informazioni chiave: numero persone, data desiderata, tipo di esperienza
+- Suggerisci servizi e barche in base alle esigenze
+- Guida l'utente verso la prenotazione
+- Se non hai informazioni specifiche, chiedi dettagli aggiuntivi
+- Parla in italiano a meno che l'utente non scriva in inglese
+
+IMPORTANTE:
+- NON inventare prezzi o disponibilità
+- NON confermare prenotazioni - solo assistere nella scelta
+- Fornisci informazioni basate sui dati reali del database
+- Se richiesto, passa all'operatore umano`
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { message, conversationHistory = [] } = body
+
+    if (!message) {
+      return NextResponse.json({ error: 'Messaggio richiesto' }, { status: 400 })
+    }
+
+    // Recupera dati dal database per contestualizzare la risposta
+    const [imbarcazioniResult, serviziResult] = await Promise.all([
+      supabase
+        .from('imbarcazioni')
+        .select('id, nome, tipo, categoria, capacita_massima, descrizione, caratteristiche, attiva')
+        .eq('attiva', true),
+      supabase
+        .from('servizi')
+        .select('id, nome, tipo, descrizione, prezzo_base, durata_minuti, include, prezzo_per_persona, min_persone, max_persone, luogo_imbarco, attivo')
+        .eq('attivo', true)
+    ])
+
+    const imbarcazioni = imbarcazioniResult.data || []
+    const servizi = serviziResult.data || []
+
+    // Recupera relazioni imbarcazioni-servizi
+    const { data: relazioni } = await supabase
+      .from('imbarcazioni_servizi')
+      .select('imbarcazione_id, servizio_id')
+      .eq('attivo', true)
+
+    // Crea un contesto con i dati disponibili
+    const contextData = {
+      imbarcazioni: imbarcazioni.map(i => ({
+        nome: i.nome,
+        tipo: i.tipo,
+        categoria: i.categoria,
+        capacita: i.capacita_massima,
+        descrizione: i.descrizione,
+        caratteristiche: i.caratteristiche
+      })),
+      servizi: servizi.map(s => {
+        // Trova barche associate a questo servizio
+        const barcheIds = relazioni?.filter(r => r.servizio_id === s.id).map(r => r.imbarcazione_id) || []
+        const barcheAssociate = imbarcazioni.filter(i => barcheIds.includes(i.id)).map(i => i.nome)
+
+        return {
+          nome: s.nome,
+          tipo: s.tipo,
+          descrizione: s.descrizione,
+          prezzo_base: s.prezzo_base,
+          durata_ore: (s.durata_minuti / 60).toFixed(1),
+          include: s.include,
+          prezzo_per_persona: s.prezzo_per_persona,
+          min_persone: s.min_persone,
+          max_persone: s.max_persone,
+          luogo_imbarco: s.luogo_imbarco,
+          barche_disponibili: barcheAssociate
+        }
+      })
+    }
+
+    // Costruisci i messaggi per Claude
+    const messages: Anthropic.MessageParam[] = [
+      ...conversationHistory,
+      {
+        role: 'user',
+        content: `DATI DISPONIBILI:
+${JSON.stringify(contextData, null, 2)}
+
+DOMANDA CLIENTE:
+${message}`
+      }
+    ]
+
+    // Chiama Claude API
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      system: SYSTEM_PROMPT,
+      messages: messages
+    })
+
+    const assistantMessage = response.content[0].type === 'text' 
+      ? response.content[0].text 
+      : 'Mi dispiace, non ho potuto elaborare la risposta.'
+
+    return NextResponse.json({
+      message: assistantMessage,
+      conversationHistory: [
+        ...conversationHistory,
+        { role: 'user', content: message },
+        { role: 'assistant', content: assistantMessage }
+      ]
+    })
+
+  } catch (error: any) {
+    console.error('Errore chatbot:', error)
+    return NextResponse.json(
+      { error: 'Errore nell\'elaborazione della richiesta', details: error.message },
+      { status: 500 }
+    )
+  }
+}// FILE: /app/api/chatbot/query/route.ts
+// Endpoint principale per le conversazioni del chatbot
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import Anthropic from '@anthropic-ai/sdk'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY!
+})
+
+// System prompt per il chatbot Blu Alliance
+const SYSTEM_PROMPT = `Sei l'assistente virtuale di Blu Alliance, un consorzio di turismo marittimo che opera dal Porto di Salerno.
+
+SERVIZI OFFERTI:
+- Tour in barca lungo la Costiera Amalfitana (Positano, Amalfi, Ravello)
+- Escursioni a Capri
+- Tour nel Cilento
+- Noleggio barche con e senza skipper
+- Water taxi
+- Tour collettivi
+
+CARATTERISTICHE:
+- Diverse categorie di imbarcazioni: Simple, Premium, Luxury
+- Barche con capacità da 6 a 12+ persone
+- Servizi personalizzabili
+- Punti di imbarco: Porto di Salerno (Masuccio Salernitano, Molo Manfredi), Vietri, Cetara, Maiori, Minori, Amalfi
+
+COMPORTAMENTO:
+- Rispondi in modo cordiale, professionale e conciso
+- Usa emoji occasionalmente per rendere la conversazione più amichevole 🚤
+- Chiedi informazioni chiave: numero persone, data desiderata, tipo di esperienza
+- Suggerisci servizi e barche in base alle esigenze
+- Guida l'utente verso la prenotazione
+- Se non hai informazioni specifiche, chiedi dettagli aggiuntivi
+- Parla in italiano a meno che l'utente non scriva in inglese
+
+IMPORTANTE:
+- NON inventare prezzi o disponibilità
+- NON confermare prenotazioni - solo assistere nella scelta
+- Fornisci informazioni basate sui dati reali del database
+- Se richiesto, passa all'operatore umano`
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { message, conversationHistory = [] } = body
+
+    if (!message) {
+      return NextResponse.json({ error: 'Messaggio richiesto' }, { status: 400 })
+    }
+
+    // Recupera dati dal database per contestualizzare la risposta
+    const [imbarcazioniResult, serviziResult] = await Promise.all([
+      supabase
+        .from('imbarcazioni')
+        .select('id, nome, tipo, categoria, capacita_massima, descrizione, caratteristiche, attiva')
+        .eq('attiva', true),
+      supabase
+        .from('servizi')
+        .select('id, nome, tipo, descrizione, prezzo_base, durata_minuti, include, prezzo_per_persona, min_persone, max_persone, luogo_imbarco, attivo')
+        .eq('attivo', true)
+    ])
+
+    const imbarcazioni = imbarcazioniResult.data || []
+    const servizi = serviziResult.data || []
+
+    // Recupera relazioni imbarcazioni-servizi
+    const { data: relazioni } = await supabase
+      .from('imbarcazioni_servizi')
+      .select('imbarcazione_id, servizio_id')
+      .eq('attivo', true)
+
+    // Crea un contesto con i dati disponibili
+    const contextData = {
+      imbarcazioni: imbarcazioni.map(i => ({
+        nome: i.nome,
+        tipo: i.tipo,
+        categoria: i.categoria,
+        capacita: i.capacita_massima,
+        descrizione: i.descrizione,
+        caratteristiche: i.caratteristiche
+      })),
+      servizi: servizi.map(s => {
+        // Trova barche associate a questo servizio
+        const barcheIds = relazioni?.filter(r => r.servizio_id === s.id).map(r => r.imbarcazione_id) || []
+        const barcheAssociate = imbarcazioni.filter(i => barcheIds.includes(i.id)).map(i => i.nome)
+
+        return {
+          nome: s.nome,
+          tipo: s.tipo,
+          descrizione: s.descrizione,
+          prezzo_base: s.prezzo_base,
+          durata_ore: (s.durata_minuti / 60).toFixed(1),
+          include: s.include,
+          prezzo_per_persona: s.prezzo_per_persona,
+          min_persone: s.min_persone,
+          max_persone: s.max_persone,
+          luogo_imbarco: s.luogo_imbarco,
+          barche_disponibili: barcheAssociate
+        }
+      })
+    }
+
+    // Costruisci i messaggi per Claude
+    const messages: Anthropic.MessageParam[] = [
+      ...conversationHistory,
+      {
+        role: 'user',
+        content: `DATI DISPONIBILI:
+${JSON.stringify(contextData, null, 2)}
+
+DOMANDA CLIENTE:
+${message}`
+      }
+    ]
+
+    // Chiama Claude API
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      system: SYSTEM_PROMPT,
+      messages: messages
+    })
+
+    const assistantMessage = response.content[0].type === 'text' 
+      ? response.content[0].text 
+      : 'Mi dispiace, non ho potuto elaborare la risposta.'
+
+    return NextResponse.json({
+      message: assistantMessage,
+      conversationHistory: [
+        ...conversationHistory,
+        { role: 'user', content: message },
+        { role: 'assistant', content: assistantMessage }
+      ]
+    })
+
+  } catch (error: any) {
+    console.error('Errore chatbot:', error)
+    return NextResponse.json(
+      { error: 'Errore nell\'elaborazione della richiesta', details: error.message },
+      { status: 500 }
+    )
+  }
+}
