@@ -28,6 +28,7 @@ export default function ImbarcazioniPage() {
     descrizione: '',
     caratteristiche: '',
     immagine_principale: '',
+    fornitore_id: '',
     attiva: true
   })
 
@@ -281,6 +282,7 @@ export default function ImbarcazioniPage() {
           ? formData.caratteristiche.split(',').map(c => c.trim()).filter(c => c)
           : [],
         immagine_principale: imageUrl || null,
+        fornitore_id: formData.fornitore_id || null,
         attiva: formData.attiva
       }
 
@@ -350,6 +352,7 @@ export default function ImbarcazioniPage() {
         ? imbarcazione.caratteristiche.join(', ')
         : '',
       immagine_principale: imbarcazione.immagine_principale || '',
+      fornitore_id: imbarcazione.fornitore_id || '',
       attiva: imbarcazione.attiva
     })
     setImagePreview(imbarcazione.immagine_principale)
@@ -365,6 +368,7 @@ export default function ImbarcazioniPage() {
       descrizione: '',
       caratteristiche: '',
       immagine_principale: '',
+      fornitore_id: '',
       attiva: true
     })
     setEditingId(null)
@@ -523,6 +527,11 @@ export default function ImbarcazioniPage() {
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm text-gray-600 capitalize">{imbarcazione.tipo}</span>
                 </div>
+                {imbarcazione.fornitore_id && (
+                  <p className="text-xs text-gray-500 mb-2">
+                    🏢 {fornitori.find(f => f.id === imbarcazione.fornitore_id)?.ragione_sociale || 'Fornitore'}
+                  </p>
+                )}
                 <p className="text-sm text-gray-600 mb-3">
                   Capacità: {imbarcazione.capacita_massima} persone
                 </p>
@@ -666,6 +675,28 @@ export default function ImbarcazioniPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   required
                 />
+              </div>
+
+              {/* Fornitore */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Fornitore
+                </label>
+                <select
+                  value={formData.fornitore_id}
+                  onChange={(e) => setFormData({ ...formData, fornitore_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">Nessun fornitore</option>
+                  {fornitori.map(f => (
+                    <option key={f.id} value={f.id}>
+                      {f.ragione_sociale}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Seleziona il fornitore proprietario dell'imbarcazione
+                </p>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
