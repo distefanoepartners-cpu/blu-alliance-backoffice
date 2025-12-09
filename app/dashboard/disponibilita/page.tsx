@@ -320,10 +320,10 @@ export default function PlanningSettimanale() {
       {/* Planning Grid */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[800px]">
+          <table className="w-full border-collapse min-w-[600px]">
             <thead>
               <tr className="bg-gray-50">
-                <th className="sticky left-0 z-10 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b border-r border-gray-200 min-w-[200px]">
+                <th className="sticky left-0 z-10 bg-gray-50 px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-semibold text-gray-700 border-b border-r border-gray-200 min-w-[120px] md:min-w-[200px]">
                   Imbarcazione
                 </th>
                 {weekDays.map((day) => {
@@ -331,7 +331,7 @@ export default function PlanningSettimanale() {
                   return (
                     <th
                       key={day.toISOString()}
-                      className={`px-3 py-3 text-center text-sm font-semibold border-b border-r border-gray-200 min-w-[120px] ${
+                      className={`px-1 md:px-3 py-2 md:py-3 text-center text-xs md:text-sm font-semibold border-b border-r border-gray-200 min-w-[60px] md:min-w-[120px] ${
                         isToday ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
                       }`}
                     >
@@ -339,7 +339,7 @@ export default function PlanningSettimanale() {
                         <span className="text-xs font-normal text-gray-500">
                           {format(day, 'EEE', { locale: it })}
                         </span>
-                        <span className={`text-lg ${isToday ? 'font-bold' : ''}`}>
+                        <span className={`text-sm md:text-lg ${isToday ? 'font-bold' : ''}`}>
                           {format(day, 'd')}
                         </span>
                       </div>
@@ -351,10 +351,10 @@ export default function PlanningSettimanale() {
             <tbody>
               {imbarcazioniFiltrate.map((barca) => (
                 <tr key={barca.id} className="hover:bg-gray-50">
-                  <td className="sticky left-0 z-10 bg-white px-4 py-3 border-b border-r border-gray-200">
+                  <td className="sticky left-0 z-10 bg-white px-2 md:px-4 py-2 md:py-3 border-b border-r border-gray-200">
                     <div className="flex flex-col">
-                      <span className="font-medium text-gray-900">{barca.nome}</span>
-                      <span className="text-xs text-gray-500">
+                      <span className="font-medium text-gray-900 text-xs md:text-base">{barca.nome}</span>
+                      <span className="text-xs text-gray-500 hidden md:block">
                         {barca.tipo} • {barca.categoria}
                       </span>
                     </div>
@@ -386,18 +386,18 @@ export default function PlanningSettimanale() {
                       >
                         <button
                           onClick={() => handleCellClick(barca.id, barca.nome, day)}
-                          className={`w-full h-full px-3 py-6 text-center border-2 transition-all ${bgColor} ${borderColor} ${cursorStyle}`}
+                          className={`w-full h-full px-1 md:px-3 py-3 md:py-6 text-center border-2 transition-all ${bgColor} ${borderColor} ${cursorStyle}`}
                           disabled={cellStatus.type === 'prenotazione'}
                         >
-                          <div className="flex flex-col items-center justify-center gap-1">
-                            <span className="text-xl">{icon}</span>
+                          <div className="flex flex-col items-center justify-center gap-0 md:gap-1">
+                            <span className="text-sm md:text-xl">{icon}</span>
                             {cellStatus.type === 'prenotazione' && (
-                              <span className="text-xs font-medium text-blue-700">
+                              <span className="text-xs font-medium text-blue-700 hidden md:block">
                                 {cellStatus.data.numero_persone} pax
                               </span>
                             )}
                             {cellStatus.type === 'blocco' && cellStatus.data.motivo && (
-                              <span className="text-xs text-red-700">
+                              <span className="text-xs text-red-700 hidden md:block">
                                 {cellStatus.data.motivo.substring(0, 15)}
                               </span>
                             )}
