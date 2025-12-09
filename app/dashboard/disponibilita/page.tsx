@@ -2,245 +2,204 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { format, addDays, startOfMonth, endOfMonth, addMonths, subMonths, isToday, isBefore, startOfWeek } from 'date-fns'
+import { format, startOfWeek, addDays, addWeeks, subWeeks, isSameDay, parseISO } from 'date-fns'
 import { it } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 
-interface Fornitore {
-  id: string
-  ragione_sociale: string
-  attivo: boolean
-}
-
-interface Imbarcazione {
-  id: string
-  nome: string
-  tipo: string
-  capacita_massima: number
-  fornitore_id: string | null
-  attiva: boolean
-}
-
-interface Disponibilita {
-  id: string
-  imbarcazione_id: string
-  data: string
-  ora_imbarco_default: string
-  on_demand: boolean
-  note: string | null
-}
-
-interface Prenotazione {
-  id: string
-  imbarcazione_id: string
-  data_servizio: string
-  stato: string
-}
-
-export default function DisponibilitaPage() {
-  const [fornitori, setFornitori] = useState<Fornitore[]>([])
-  const [imbarcazioni, setImbarcazioni] = useState<Imbarcazione[]>([])
-  const [disponibilita, setDisponibilita] = useState<Disponibilita[]>([])
-  const [prenotazioni, setPrenotazioni] = useState<Prenotazione[]>([])
+export default function PlanningSettimanale() {
+  const [imbarcazioni, setImbarcazioni] = useState<any[]>([])
+  const [imbarcazioniFiltrate, setImbarcazioniFiltrate] = useState<any[]>([])
+  const [fornitori, setFornitori] = useState<any[]>([])
+  const [prenotazioni, setPrenotazioni] = useState<any[]>([])
+  const [blocchi, setBlocchi] = useState<any[]>([])
+  const [currentWeekStart, setCurrentWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [meseCorrente, setMeseCorrente] = useState(new Date())
-  const [showModal, setShowModal] = useState(false)
-  const [filtroFornitore, setFiltroFornitore] = useState<string>('')
-  
-  const [formData, setFormData] = useState({
-    fornitore_id: '',
-    imbarcazione_id: '',
-    date_selezionate: [] as string[],
-    ora_imbarco_default: '09:30',
-    on_demand: false,
-    note: ''
-  })
-
-  const inizioMese = startOfMonth(meseCorrente)
-  const fineMese = endOfMonth(meseCorrente)
-  
-  // Calcola i giorni da mostrare (inclusi giorni del mese precedente/successivo per completare le settimane)
-  const primoGiornoSettimana = startOfWeek(inizioMese, { weekStartsOn: 1 })
-  const giorniCalendario: Date[] = []
-  let giornoCorrente = primoGiornoSettimana
-  
-  // Genera 42 giorni (6 settimane) per coprire sempre tutto il mese
-  for (let i = 0; i < 42; i++) {
-    giorniCalendario.push(giornoCorrente)
-    giornoCorrente = addDays(giornoCorrente, 1)
-  }
+  const [filtroFornitore, setFiltroFornitore] = useState<string>('tutti')
+  const [filtroCategoria, setFiltroCategoria] = useState<string>('tutti')
+  const [showBloccoModal, setShowBloccoModal] = useState(false)
+  const [selectedCell, setSelectedCell] = useState<{imbarcazioneId: string, date: Date, imbarcazioneNome: string} | null>(null)
+  const [motivoBlocco, setMotivoBlocco] = useState('')
+  const [tipoBlocco, setTipoBlocco] = useState<'manutenzione' | 'prenotazione_esterna' | 'altro'>('altro')
 
   useEffect(() => {
     loadData()
-  }, [meseCorrente])
+  }, [currentWeekStart])
+
+  useEffect(() => {
+    applicaFiltri()
+  }, [imbarcazioni, filtroFornitore, filtroCategoria])
 
   async function loadData() {
     try {
       setLoading(true)
-      setError(null)
-      
+
+      const weekEnd = addDays(currentWeekStart, 6)
+
       // Carica fornitori
-      const { data: fornitoriData, error: errFornitori } = await supabase
+      const { data: fornitoriData } = await supabase
         .from('fornitori')
-        .select('id, ragione_sociale, attivo')
+        .select('id, ragione_sociale')
         .eq('attivo', true)
         .order('ragione_sociale')
 
-      if (errFornitori) throw new Error('Errore fornitori: ' + errFornitori.message)
-
       // Carica imbarcazioni
-      const { data: imbarcazioniData, error: errImb } = await supabase
+      const { data: barcheData } = await supabase
         .from('imbarcazioni')
-        .select('id, nome, tipo, capacita_massima, fornitore_id, attiva')
+        .select('id, nome, tipo, categoria, fornitore_id')
         .eq('attiva', true)
+        .order('categoria', { ascending: false })
         .order('nome')
 
-      if (errImb) throw new Error('Errore imbarcazioni: ' + errImb.message)
-
-      // Carica disponibilità per tutto il mese (con margine)
-      const { data: disponibilitaData, error: errDisp } = await supabase
-        .from('disponibilita_imbarcazioni')
-        .select('id, imbarcazione_id, data, ora_imbarco_default, on_demand, note')
-        .gte('data', format(primoGiornoSettimana, 'yyyy-MM-dd'))
-        .lte('data', format(addDays(fineMese, 7), 'yyyy-MM-dd'))
-
-      if (errDisp) throw new Error('Errore disponibilità: ' + errDisp.message)
-
       // Carica prenotazioni
-      const { data: prenotazioniData, error: errPren } = await supabase
+      const { data: prenotazioniData } = await supabase
         .from('prenotazioni')
-        .select('id, imbarcazione_id, data_servizio, stato')
-        .gte('data_servizio', format(primoGiornoSettimana, 'yyyy-MM-dd'))
-        .lte('data_servizio', format(addDays(fineMese, 7), 'yyyy-MM-dd'))
-        .in('stato', ['confermata', 'completata'])
+        .select('id, imbarcazione_id, data_servizio, stato, numero_persone')
+        .gte('data_servizio', format(currentWeekStart, 'yyyy-MM-dd'))
+        .lte('data_servizio', format(weekEnd, 'yyyy-MM-dd'))
+        .in('stato', ['confermata', 'in_attesa', 'completata'])
 
-      if (errPren) throw new Error('Errore prenotazioni: ' + errPren.message)
+      // Carica blocchi
+      const { data: blocchiData } = await supabase
+        .from('blocchi')
+        .select('id, imbarcazione_id, data_inizio, data_fine, motivo, tipo')
+        .lte('data_inizio', format(weekEnd, 'yyyy-MM-dd'))
+        .gte('data_fine', format(currentWeekStart, 'yyyy-MM-dd'))
 
       setFornitori(fornitoriData || [])
-      setImbarcazioni(imbarcazioniData || [])
-      setDisponibilita(disponibilitaData || [])
+      setImbarcazioni(barcheData || [])
       setPrenotazioni(prenotazioniData || [])
-    } catch (err: any) {
-      console.error('Errore loadData:', err)
-      setError(err.message)
-      toast.error(err.message)
+      setBlocchi(blocchiData || [])
+    } catch (error) {
+      console.error('Errore:', error)
+      toast.error('Errore nel caricamento')
     } finally {
       setLoading(false)
     }
   }
 
-  function isDisponibile(imbarcazioneId: string, data: string): Disponibilita | null {
-    return disponibilita.find(d => d.imbarcazione_id === imbarcazioneId && d.data === data) || null
+  function applicaFiltri() {
+    let filtrate = [...imbarcazioni]
+
+    if (filtroFornitore !== 'tutti') {
+      filtrate = filtrate.filter(b => b.fornitore_id === filtroFornitore)
+    }
+
+    if (filtroCategoria !== 'tutti') {
+      filtrate = filtrate.filter(b => b.categoria === filtroCategoria)
+    }
+
+    setImbarcazioniFiltrate(filtrate)
   }
 
-  function isPrenotata(imbarcazioneId: string, data: string): boolean {
-    return prenotazioni.some(p => p.imbarcazione_id === imbarcazioneId && p.data_servizio === data)
+  function goToPreviousWeek() {
+    setCurrentWeekStart(subWeeks(currentWeekStart, 1))
   }
 
-  async function toggleDisponibilita(imbarcazione: Imbarcazione, data: string) {
-    const dispEsistente = isDisponibile(imbarcazione.id, data)
-    
-    if (dispEsistente) {
-      const { error } = await supabase
-        .from('disponibilita_imbarcazioni')
-        .delete()
-        .eq('id', dispEsistente.id)
-      if (error) {
-        toast.error('Errore: ' + error.message)
-        return
+  function goToNextWeek() {
+    setCurrentWeekStart(addWeeks(currentWeekStart, 1))
+  }
+
+  function goToToday() {
+    setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))
+  }
+
+  function getCellStatus(imbarcazioneId: string, date: Date) {
+    const dateStr = format(date, 'yyyy-MM-dd')
+
+    // Controlla prenotazioni
+    const prenotazione = prenotazioni.find(
+      p => p.imbarcazione_id === imbarcazioneId && p.data_servizio === dateStr
+    )
+
+    // Controlla blocchi
+    const blocco = blocchi.find(b => {
+      if (b.imbarcazione_id !== imbarcazioneId) return false
+      const dataInizio = parseISO(b.data_inizio)
+      const dataFine = parseISO(b.data_fine)
+      return date >= dataInizio && date <= dataFine
+    })
+
+    if (prenotazione) {
+      return { type: 'prenotazione', data: prenotazione }
+    }
+
+    if (blocco) {
+      return { type: 'blocco', data: blocco }
+    }
+
+    return { type: 'disponibile' }
+  }
+
+  function handleCellClick(imbarcazioneId: string, imbarcazioneNome: string, date: Date) {
+    const cellStatus = getCellStatus(imbarcazioneId, date)
+
+    if (cellStatus.type === 'prenotazione') {
+      toast.error('Questa data ha già una prenotazione')
+      return
+    }
+
+    if (cellStatus.type === 'blocco') {
+      // Chiedi conferma per rimuovere il blocco
+      if (confirm('Vuoi rimuovere questo blocco e rendere disponibile la barca?')) {
+        rimuoviBlocco(cellStatus.data.id)
       }
-      toast.success('Disponibilità rimossa')
     } else {
+      // Apri modal per creare blocco
+      setSelectedCell({ imbarcazioneId, date, imbarcazioneNome })
+      setMotivoBlocco('')
+      setTipoBlocco('altro')
+      setShowBloccoModal(true)
+    }
+  }
+
+  async function creaBlocco() {
+    if (!selectedCell) return
+
+    try {
       const { error } = await supabase
-        .from('disponibilita_imbarcazioni')
-        .insert({
-          imbarcazione_id: imbarcazione.id,
-          data,
-          ora_imbarco_default: '09:30',
-          on_demand: false
-        })
-      if (error) {
-        toast.error('Errore: ' + error.message)
-        return
-      }
-      toast.success('Disponibilità aggiunta')
+        .from('blocchi')
+        .insert([{
+          imbarcazione_id: selectedCell.imbarcazioneId,
+          data_inizio: format(selectedCell.date, 'yyyy-MM-dd'),
+          data_fine: format(selectedCell.date, 'yyyy-MM-dd'),
+          motivo: motivoBlocco || 'Indisponibilità',
+          tipo: tipoBlocco
+        }])
+
+      if (error) throw error
+
+      toast.success('Blocco creato!')
+      setShowBloccoModal(false)
+      loadData()
+    } catch (error: any) {
+      console.error('Errore creazione blocco:', error)
+      toast.error('Errore nella creazione del blocco')
     }
-    loadData()
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (formData.date_selezionate.length === 0) {
-      toast.error('Seleziona almeno una data')
-      return
+  async function rimuoviBlocco(bloccoId: string) {
+    try {
+      const { error } = await supabase
+        .from('blocchi')
+        .delete()
+        .eq('id', bloccoId)
+
+      if (error) throw error
+
+      toast.success('Blocco rimosso!')
+      loadData()
+    } catch (error: any) {
+      console.error('Errore rimozione blocco:', error)
+      toast.error('Errore nella rimozione del blocco')
     }
-
-    const inserimenti = formData.date_selezionate.map(data => ({
-      imbarcazione_id: formData.imbarcazione_id,
-      data,
-      ora_imbarco_default: formData.ora_imbarco_default,
-      on_demand: formData.on_demand,
-      note: formData.note || null
-    }))
-
-    const { error } = await supabase
-      .from('disponibilita_imbarcazioni')
-      .upsert(inserimenti, { onConflict: 'imbarcazione_id,data' })
-
-    if (error) {
-      toast.error('Errore: ' + error.message)
-      return
-    }
-
-    toast.success(`${formData.date_selezionate.length} disponibilità aggiunte!`)
-    setFormData({ fornitore_id: '', imbarcazione_id: '', date_selezionate: [], ora_imbarco_default: '09:30', on_demand: false, note: '' })
-    setShowModal(false)
-    loadData()
   }
 
-  // Filtra imbarcazioni
-  const imbarcazioniFiltrate = filtroFornitore 
-    ? imbarcazioni.filter(i => i.fornitore_id === filtroFornitore)
-    : imbarcazioni
-
-  const imbarcazioniFornitoreForm = formData.fornitore_id 
-    ? imbarcazioni.filter(i => i.fornitore_id === formData.fornitore_id)
-    : []
-
-  // Conta disponibilità e prenotazioni per imbarcazione nel mese
-  function getStatsMese(imbarcazioneId: string) {
-    const dispCount = disponibilita.filter(d => {
-      const dataDisp = new Date(d.data)
-      return d.imbarcazione_id === imbarcazioneId && 
-             dataDisp >= inizioMese && 
-             dataDisp <= fineMese
-    }).length
-
-    const prenCount = prenotazioni.filter(p => {
-      const dataPren = new Date(p.data_servizio)
-      return p.imbarcazione_id === imbarcazioneId && 
-             dataPren >= inizioMese && 
-             dataPren <= fineMese
-    }).length
-
-    return { disponibili: dispCount, prenotate: prenCount }
-  }
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i))
 
   if (loading) {
-    return <div className="p-8"><div className="text-gray-600">Caricamento disponibilità...</div></div>
-  }
-
-  if (error) {
     return (
       <div className="p-8">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <h3 className="font-semibold text-red-800">Errore</h3>
-          <p className="text-red-700">{error}</p>
-          <button onClick={loadData} className="mt-3 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
-            Riprova
-          </button>
-        </div>
+        <div className="text-gray-600">Caricamento planning...</div>
       </div>
     )
   }
@@ -248,240 +207,318 @@ export default function DisponibilitaPage() {
   return (
     <div className="p-4 md:p-8">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">📅 Disponibilità Mensile</h1>
-          <p className="text-gray-600 mt-1">Gestisci le disponibilità delle imbarcazioni</p>
-        </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          + Aggiungi Disponibilità
-        </button>
-      </div>
+      <div className="mb-6">
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+          Planning Settimanale
+        </h1>
+        <p className="text-gray-600">
+          Click su una cella per bloccare/sbloccare la disponibilità
+        </p>
 
-      {/* Navigazione mese */}
-      <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setMeseCorrente(subMonths(meseCorrente, 1))} className="p-2 hover:bg-gray-100 rounded-lg text-xl">←</button>
-            <div className="text-center min-w-[200px]">
-              <p className="font-semibold text-xl capitalize">{format(meseCorrente, 'MMMM yyyy', { locale: it })}</p>
-            </div>
-            <button onClick={() => setMeseCorrente(addMonths(meseCorrente, 1))} className="p-2 hover:bg-gray-100 rounded-lg text-xl">→</button>
-            <button onClick={() => setMeseCorrente(new Date())} className="px-3 py-1 text-sm bg-gray-100 rounded-lg hover:bg-gray-200">Oggi</button>
+        {/* Navigation */}
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mt-4">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={goToPreviousWeek}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              ← Settimana Prec.
+            </button>
+            <button
+              onClick={goToToday}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Oggi
+            </button>
+            <button
+              onClick={goToNextWeek}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              Settimana Succ. →
+            </button>
           </div>
-          <select
-            value={filtroFornitore}
-            onChange={(e) => setFiltroFornitore(e.target.value)}
-            className="px-3 py-2 border rounded-lg text-sm"
-          >
-            <option value="">Tutti i fornitori</option>
-            {fornitori.map(f => (
-              <option key={f.id} value={f.id}>{f.ragione_sociale}</option>
-            ))}
-          </select>
+
+          <div className="text-lg font-semibold text-gray-700">
+            {format(currentWeekStart, 'MMMM yyyy', { locale: it })}
+          </div>
+        </div>
+
+        {/* Filtri */}
+        <div className="mt-4 flex flex-col md:flex-row gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Fornitore
+            </label>
+            <select
+              value={filtroFornitore}
+              onChange={(e) => setFiltroFornitore(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="tutti">Tutti i fornitori ({imbarcazioni.length})</option>
+              {fornitori.map(f => {
+                const count = imbarcazioni.filter(b => b.fornitore_id === f.id).length
+                return (
+                  <option key={f.id} value={f.id}>
+                    {f.ragione_sociale} ({count})
+                  </option>
+                )
+              })}
+            </select>
+          </div>
+
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Categoria
+            </label>
+            <select
+              value={filtroCategoria}
+              onChange={(e) => setFiltroCategoria(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="tutti">Tutte le categorie</option>
+              <option value="luxury">Luxury</option>
+              <option value="premium">Premium</option>
+              <option value="simple">Simple</option>
+            </select>
+          </div>
+
+          {(filtroFornitore !== 'tutti' || filtroCategoria !== 'tutti') && (
+            <div className="flex items-end">
+              <button
+                onClick={() => {
+                  setFiltroFornitore('tutti')
+                  setFiltroCategoria('tutti')
+                }}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900"
+              >
+                ✕ Rimuovi filtri
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Legenda */}
-      <div className="flex flex-wrap gap-4 mb-4 text-sm">
-        <div className="flex items-center gap-2"><div className="w-6 h-6 bg-green-500 rounded"></div><span>Disponibile</span></div>
-        <div className="flex items-center gap-2"><div className="w-6 h-6 bg-blue-500 rounded"></div><span>Prenotata</span></div>
-        <div className="flex items-center gap-2"><div className="w-6 h-6 bg-gray-200 rounded"></div><span>Non disponibile</span></div>
+      <div className="mb-6 p-4 bg-white rounded-lg border border-gray-200">
+        <div className="text-sm font-medium text-gray-700 mb-2">Legenda:</div>
+        <div className="flex flex-wrap gap-4 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-green-100 border-2 border-green-400 rounded"></div>
+            <span>✅ Disponibile (click per bloccare)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-red-100 border-2 border-red-400 rounded"></div>
+            <span>🚫 Bloccata (click per sbloccare)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-blue-100 border-2 border-blue-400 rounded"></div>
+            <span>📋 Prenotata (non modificabile)</span>
+          </div>
+        </div>
       </div>
 
-      {/* Lista Imbarcazioni con Calendario */}
-      <div className="space-y-6">
-        {imbarcazioniFiltrate.map(imbarcazione => {
-          const fornitore = fornitori.find(f => f.id === imbarcazione.fornitore_id)
-          const stats = getStatsMese(imbarcazione.id)
-          
-          return (
-            <div key={imbarcazione.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-              {/* Header Imbarcazione */}
-              <div className="bg-gray-50 px-4 py-3 border-b flex flex-col md:flex-row md:items-center justify-between gap-2">
-                <div>
-                  <h3 className="font-semibold text-lg">🚤 {imbarcazione.nome}</h3>
-                  <p className="text-sm text-gray-500">
-                    {imbarcazione.tipo} • Max {imbarcazione.capacita_massima} pax
-                    {fornitore && <span> • {fornitore.ragione_sociale}</span>}
-                  </p>
-                </div>
-                <div className="flex gap-4 text-sm">
-                  <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full">{stats.disponibili} disponibili</span>
-                  <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full">{stats.prenotate} prenotate</span>
-                </div>
-              </div>
-
-              {/* Calendario Mensile */}
-              <div className="p-4">
-                {/* Header giorni settimana */}
-                <div className="grid grid-cols-7 gap-1 mb-2">
-                  {['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'].map(giorno => (
-                    <div key={giorno} className="text-center text-sm font-medium text-gray-500 py-2">
-                      {giorno}
+      {/* Planning Grid */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse min-w-[800px]">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className="sticky left-0 z-10 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b border-r border-gray-200 min-w-[200px]">
+                  Imbarcazione
+                </th>
+                {weekDays.map((day) => {
+                  const isToday = isSameDay(day, new Date())
+                  return (
+                    <th
+                      key={day.toISOString()}
+                      className={`px-3 py-3 text-center text-sm font-semibold border-b border-r border-gray-200 min-w-[120px] ${
+                        isToday ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                      }`}
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-xs font-normal text-gray-500">
+                          {format(day, 'EEE', { locale: it })}
+                        </span>
+                        <span className={`text-lg ${isToday ? 'font-bold' : ''}`}>
+                          {format(day, 'd')}
+                        </span>
+                      </div>
+                    </th>
+                  )
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {imbarcazioniFiltrate.map((barca) => (
+                <tr key={barca.id} className="hover:bg-gray-50">
+                  <td className="sticky left-0 z-10 bg-white px-4 py-3 border-b border-r border-gray-200">
+                    <div className="flex flex-col">
+                      <span className="font-medium text-gray-900">{barca.nome}</span>
+                      <span className="text-xs text-gray-500">
+                        {barca.tipo} • {barca.categoria}
+                      </span>
                     </div>
-                  ))}
-                </div>
+                  </td>
+                  {weekDays.map((day) => {
+                    const cellStatus = getCellStatus(barca.id, day)
+                    
+                    let bgColor = 'bg-green-50 hover:bg-green-100'
+                    let borderColor = 'border-green-300'
+                    let icon = '✅'
+                    let cursorStyle = 'cursor-pointer'
 
-                {/* Griglia giorni */}
-                <div className="grid grid-cols-7 gap-1">
-                  {giorniCalendario.map((giorno, index) => {
-                    const dataStr = format(giorno, 'yyyy-MM-dd')
-                    const disp = isDisponibile(imbarcazione.id, dataStr)
-                    const prenotata = isPrenotata(imbarcazione.id, dataStr)
-                    const passato = isBefore(giorno, new Date()) && !isToday(giorno)
-                    const fuoriMese = giorno < inizioMese || giorno > fineMese
-                    const oggi = isToday(giorno)
-
-                    // Determina colore cella
-                    let cellClass = 'bg-gray-100 hover:bg-gray-200'
-                    if (fuoriMese) {
-                      cellClass = 'bg-gray-50 text-gray-300'
-                    } else if (prenotata) {
-                      cellClass = 'bg-blue-500 text-white'
-                    } else if (disp) {
-                      cellClass = 'bg-green-500 text-white hover:bg-green-600'
-                    } else if (passato) {
-                      cellClass = 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    if (cellStatus.type === 'prenotazione') {
+                      bgColor = 'bg-blue-50'
+                      borderColor = 'border-blue-300'
+                      icon = '📋'
+                      cursorStyle = 'cursor-not-allowed'
+                    } else if (cellStatus.type === 'blocco') {
+                      bgColor = 'bg-red-50 hover:bg-red-100'
+                      borderColor = 'border-red-300'
+                      icon = '🚫'
+                      cursorStyle = 'cursor-pointer'
                     }
 
                     return (
-                      <button
-                        key={dataStr + index}
-                        onClick={() => !passato && !fuoriMese && !prenotata && toggleDisponibilita(imbarcazione, dataStr)}
-                        disabled={passato || fuoriMese || prenotata}
-                        className={`
-                          aspect-square p-1 rounded-lg text-sm font-medium transition-colors
-                          ${cellClass}
-                          ${oggi ? 'ring-2 ring-blue-400 ring-offset-1' : ''}
-                        `}
-                        title={prenotata ? 'Prenotata' : disp ? `Disponibile - ${disp.ora_imbarco_default}` : 'Non disponibile'}
+                      <td
+                        key={`${barca.id}-${day.toISOString()}`}
+                        className="border-b border-r border-gray-200 p-0"
                       >
-                        <span className="block">{format(giorno, 'd')}</span>
-                        {disp && !prenotata && !fuoriMese && (
-                          <span className="block text-xs opacity-80">{disp.ora_imbarco_default?.substring(0, 5)}</span>
-                        )}
-                        {prenotata && !fuoriMese && (
-                          <span className="block text-xs">🔒</span>
-                        )}
-                      </button>
+                        <button
+                          onClick={() => handleCellClick(barca.id, barca.nome, day)}
+                          className={`w-full h-full px-3 py-6 text-center border-2 transition-all ${bgColor} ${borderColor} ${cursorStyle}`}
+                          disabled={cellStatus.type === 'prenotazione'}
+                        >
+                          <div className="flex flex-col items-center justify-center gap-1">
+                            <span className="text-xl">{icon}</span>
+                            {cellStatus.type === 'prenotazione' && (
+                              <span className="text-xs font-medium text-blue-700">
+                                {cellStatus.data.numero_persone} pax
+                              </span>
+                            )}
+                            {cellStatus.type === 'blocco' && cellStatus.data.motivo && (
+                              <span className="text-xs text-red-700">
+                                {cellStatus.data.motivo.substring(0, 15)}
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      </td>
                     )
                   })}
-                </div>
-              </div>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {imbarcazioniFiltrate.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              {filtroFornitore !== 'tutti' || filtroCategoria !== 'tutti' 
+                ? 'Nessuna imbarcazione trovata con i filtri selezionati'
+                : 'Nessuna imbarcazione attiva trovata'
+              }
             </div>
-          )
-        })}
+          )}
+        </div>
       </div>
 
-      {imbarcazioniFiltrate.length === 0 && (
-        <div className="text-center py-12 bg-white rounded-xl shadow-sm border">
-          <div className="text-4xl mb-3">🚤</div>
-          <p className="text-gray-500">Nessuna imbarcazione trovata</p>
+      {/* Stats */}
+      <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <div className="text-sm text-gray-600">Barche Visualizzate</div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">
+            {imbarcazioniFiltrate.length}
+          </div>
         </div>
-      )}
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <div className="text-sm text-gray-600">Prenotazioni</div>
+          <div className="text-2xl font-bold text-blue-600 mt-1">
+            {prenotazioni.length}
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <div className="text-sm text-gray-600">Blocchi Attivi</div>
+          <div className="text-2xl font-bold text-red-600 mt-1">
+            {blocchi.length}
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <div className="text-sm text-gray-600">Tasso Occupazione</div>
+          <div className="text-2xl font-bold text-purple-600 mt-1">
+            {imbarcazioniFiltrate.length > 0 
+              ? Math.round((prenotazioni.length / (imbarcazioniFiltrate.length * 7)) * 100)
+              : 0}%
+          </div>
+        </div>
+      </div>
 
-      {/* Modal Aggiungi Disponibilità */}
-      {showModal && (
+      {/* Modal Crea Blocco */}
+      {showBloccoModal && selectedCell && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b flex items-center justify-between">
-              <h2 className="text-xl font-bold">Aggiungi Disponibilità</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+          <div className="bg-white rounded-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Blocca Disponibilità</h2>
+              <button
+                onClick={() => setShowBloccoModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-2xl"
+              >
+                ×
+              </button>
             </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Fornitore *</label>
-                <select
-                  value={formData.fornitore_id}
-                  onChange={(e) => setFormData({ ...formData, fornitore_id: e.target.value, imbarcazione_id: '' })}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  required
-                >
-                  <option value="">Seleziona fornitore</option>
-                  {fornitori.map(f => <option key={f.id} value={f.id}>{f.ragione_sociale}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Imbarcazione *</label>
-                <select
-                  value={formData.imbarcazione_id}
-                  onChange={(e) => setFormData({ ...formData, imbarcazione_id: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  required
-                  disabled={!formData.fornitore_id}
-                >
-                  <option value="">Seleziona imbarcazione</option>
-                  {imbarcazioniFornitoreForm.map(i => <option key={i.id} value={i.id}>{i.nome}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Date ({formData.date_selezionate.length} selezionate)</label>
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  {/* Header giorni */}
-                  <div className="grid grid-cols-7 gap-1 mb-2">
-                    {['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((g, i) => (
-                      <div key={i} className="text-center text-xs font-medium text-gray-500">{g}</div>
-                    ))}
-                  </div>
-                  {/* Griglia */}
-                  <div className="grid grid-cols-7 gap-1">
-                    {giorniCalendario.slice(0, 35).map((giorno, index) => {
-                      const dataStr = format(giorno, 'yyyy-MM-dd')
-                      const selezionata = formData.date_selezionate.includes(dataStr)
-                      const passato = isBefore(giorno, new Date()) && !isToday(giorno)
-                      const fuoriMese = giorno < inizioMese || giorno > fineMese
 
-                      return (
-                        <button
-                          key={dataStr + index}
-                          type="button"
-                          disabled={passato || fuoriMese}
-                          onClick={() => {
-                            if (selezionata) {
-                              setFormData({ ...formData, date_selezionate: formData.date_selezionate.filter(d => d !== dataStr) })
-                            } else {
-                              setFormData({ ...formData, date_selezionate: [...formData.date_selezionate, dataStr] })
-                            }
-                          }}
-                          className={`
-                            aspect-square rounded text-sm font-medium
-                            ${fuoriMese ? 'text-gray-300' : ''}
-                            ${passato ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : ''}
-                            ${selezionata ? 'bg-blue-600 text-white' : !passato && !fuoriMese ? 'bg-white border hover:bg-blue-50' : ''}
-                          `}
-                        >
-                          {format(giorno, 'd')}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Ora imbarco</label>
-                  <input type="time" value={formData.ora_imbarco_default} onChange={(e) => setFormData({ ...formData, ora_imbarco_default: e.target.value })} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
-                <div className="flex items-end">
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={formData.on_demand} onChange={(e) => setFormData({ ...formData, on_demand: e.target.checked })} className="w-5 h-5" />
-                    <span className="text-sm">On Demand</span>
-                  </label>
-                </div>
-              </div>
+            <div className="mb-4">
+              <p className="text-sm text-gray-600">
+                <strong>Barca:</strong> {selectedCell.imbarcazioneNome}
+              </p>
+              <p className="text-sm text-gray-600">
+                <strong>Data:</strong> {format(selectedCell.date, 'dd MMMM yyyy', { locale: it })}
+              </p>
+            </div>
+
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Note</label>
-                <input type="text" value={formData.note} onChange={(e) => setFormData({ ...formData, note: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="Es: Solo mezza giornata" />
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tipo Blocco
+                </label>
+                <select
+                  value={tipoBlocco}
+                  onChange={(e) => setTipoBlocco(e.target.value as any)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="altro">Altro</option>
+                  <option value="manutenzione">Manutenzione</option>
+                  <option value="prenotazione_esterna">Prenotazione Esterna</option>
+                </select>
               </div>
-              <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">Annulla</button>
-                <button type="submit" className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Salva</button>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Motivo (opzionale)
+                </label>
+                <textarea
+                  value={motivoBlocco}
+                  onChange={(e) => setMotivoBlocco(e.target.value)}
+                  placeholder="Es: Manutenzione motore, prenotazione diretta..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  rows={3}
+                />
               </div>
-            </form>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowBloccoModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Annulla
+              </button>
+              <button
+                onClick={creaBlocco}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Blocca
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -23,7 +23,7 @@ export default function DashboardLayout({
 
   async function checkUser() {
     const { data: { session } } = await supabase.auth.getSession()
-    
+
     if (!session) {
       router.push('/')
       return
@@ -55,11 +55,12 @@ export default function DashboardLayout({
 
   // Menu completo con ruoli
   const allMenuItems = [
-    { href: '/dashboard/disponibilita', label: 'Disponibilità', icon: '✅', roles: ['admin', 'operatore'] },
+    { href: '/dashboard/disponibilita', label: 'Planning', icon: '📅', roles: ['admin', 'operatore'] },
     { href: '/dashboard/statistiche', label: 'Statistiche', icon: '📊', roles: ['admin'] },
     { href: '/dashboard/prenotazioni', label: 'Prenotazioni', icon: '📋', roles: ['admin'] },
     { href: '/dashboard/calendario', label: 'Calendario', icon: '📅', roles: ['admin'] },
     { href: '/dashboard/clienti', label: 'Clienti', icon: '👥', roles: ['admin'] },
+    { href: '/dashboard/chatbot-leads', label: 'Lead Chatbot', icon: '🤖', roles: ['admin'] }, // ← AGGIUNGI QUESTA
     { href: '/dashboard/servizi', label: 'Servizi', icon: '🎯', roles: ['admin'] },
     { href: '/dashboard/imbarcazioni', label: 'Imbarcazioni', icon: '🚤', roles: ['admin'] },
     { href: '/dashboard/fornitori', label: 'Fornitori', icon: '🏢', roles: ['admin'] },
@@ -102,9 +103,9 @@ export default function DashboardLayout({
         <div className="flex-1 flex flex-col overflow-y-auto p-6">
           <div className="flex items-center gap-3 mb-8">
             <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden">
-              <img 
-                src="/logo.png" 
-                alt="Blu Alliance Logo" 
+              <img
+                src="/logo.png"
+                alt="Blu Alliance Logo"
                 className="w-full h-full object-contain"
               />
             </div>
@@ -163,9 +164,9 @@ export default function DashboardLayout({
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center overflow-hidden">
-              <img 
-                src="/logo.png" 
-                alt="Blu Alliance Logo" 
+              <img
+                src="/logo.png"
+                alt="Blu Alliance Logo"
                 className="w-full h-full object-contain"
               />
             </div>
@@ -197,9 +198,9 @@ export default function DashboardLayout({
               <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden">
-                    <img 
-                      src="/logo.png" 
-                      alt="Blu Alliance Logo" 
+                    <img
+                      src="/logo.png"
+                      alt="Blu Alliance Logo"
                       className="w-full h-full object-contain"
                     />
                   </div>
