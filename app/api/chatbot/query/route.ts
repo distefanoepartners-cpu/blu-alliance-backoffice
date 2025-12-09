@@ -162,10 +162,19 @@ ${message}`
       ? response.content[0].text 
       : 'Mi dispiace, non ho potuto elaborare la risposta.'
 
+      // Debug logging
+    console.log('🔍 DEBUG LEAD SAVING:');
+    console.log('- conversationHistory.length:', conversationHistory.length);
+    console.log('- userInfo:', JSON.stringify(userInfo));
+    console.log('- userInfo presente?', !!userInfo);
+    console.log('- email o nome?', userInfo?.email || userInfo?.nome);
+    console.log('- Condizione passa?', conversationHistory.length === 0 && userInfo && (userInfo.email || userInfo.nome));
+
     // Salva lead se è il primo messaggio e ha fornito contatti
     if (conversationHistory.length === 0 && userInfo && (userInfo.email || userInfo.nome)) {
+      console.log('✅ Tentativo salvataggio lead...');
       try {
-        const { data: newLead } = await supabase
+        const { data: newLead, error: insertError } = await supabase
           .from('chatbot_leads')
           .insert([{
             nome: userInfo.nome || null,
@@ -182,12 +191,25 @@ ${message}`
           .select()
           .single()
         
-        console.log('Lead salvato:', newLead?.id)
+        if (insertError) {
+          console.error('❌ Errore INSERT:', insertError)
+        } else {
+          console.log('✅ Lead salvato con successo! ID:', newLead?.id)
+        }
       } catch (leadError) {
-        console.error('Errore salvataggio lead:', leadError)
+        console.error('❌ Errore salvataggio lead (catch):', leadError)
         // Non bloccare la conversazione se il salvataggio lead fallisce
       }
-    } else if (conversationHistory.length > 0 && userInfo && userInfo.email) {
+    } else {
+      console.log('⚠️ Condizione NON passata - lead NON salvato');
+      console.log('  Motivi possibili:');
+      console.log('  - conversationHistory non vuoto?', conversationHistory.length > 0);
+      console.log('  - userInfo mancante?', !userInfo);
+      console.log('  - email e nome mancanti?', !(userInfo?.email || userInfo?.nome));
+    }
+    
+    // Aggiorna conversazione se continua
+    if (conversationHistory.length > 0 && userInfo && userInfo.email) {
       // Aggiorna conversazione se il lead esiste già (conversazione continua)
       try {
         const { data: existingLead } = await supabase
