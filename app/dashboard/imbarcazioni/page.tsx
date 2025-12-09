@@ -6,6 +6,8 @@ import toast from 'react-hot-toast'
 
 export default function ImbarcazioniPage() {
   const [imbarcazioni, setImbarcazioni] = useState<any[]>([])
+  const [imbarcazioniFiltrate, setImbarcazioniFiltrate] = useState<any[]>([])
+  const [fornitori, setFornitori] = useState<any[]>([])
   const [servizi, setServizi] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -14,6 +16,9 @@ export default function ImbarcazioniPage() {
   const [selectedImbarcazione, setSelectedImbarcazione] = useState<any>(null)
   const [serviziAssociati, setServiziAssociati] = useState<string[]>([])
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [filtroFornitore, setFiltroFornitore] = useState<string>('tutti')
+  const [filtroCategoria, setFiltroCategoria] = useState<string>('tutti')
+  const [searchTerm, setSearchTerm] = useState('')
 
   const [formData, setFormData] = useState({
     nome: '',
@@ -33,8 +38,21 @@ export default function ImbarcazioniPage() {
     loadData()
   }, [])
 
+  useEffect(() => {
+    applicaFiltri()
+  }, [imbarcazioni, filtroFornitore, filtroCategoria, searchTerm])
+
   async function loadData() {
     try {
+      // Carica fornitori
+      const { data: fornitoriData, error: fornitoriError } = await supabase
+        .from('fornitori')
+        .select('id, ragione_sociale')
+        .eq('attivo', true)
+        .order('ragione_sociale')
+
+      if (fornitoriError) throw fornitoriError
+
       // Carica imbarcazioni
       const { data: imbarcazioniData, error: imbarcazioniError } = await supabase
         .from('imbarcazioni')
@@ -71,6 +89,7 @@ export default function ImbarcazioniPage() {
         return { ...imb, servizi_associati: serviziAssegnati }
       }) || []
 
+      setFornitori(fornitoriData || [])
       setImbarcazioni(imbarcazioniConServizi)
       setServizi(serviziData || [])
     } catch (error: any) {
@@ -79,6 +98,30 @@ export default function ImbarcazioniPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  function applicaFiltri() {
+    let filtrate = [...imbarcazioni]
+
+    // Filtro fornitore
+    if (filtroFornitore !== 'tutti') {
+      filtrate = filtrate.filter(b => b.fornitore_id === filtroFornitore)
+    }
+
+    // Filtro categoria
+    if (filtroCategoria !== 'tutti') {
+      filtrate = filtrate.filter(b => b.categoria === filtroCategoria)
+    }
+
+    // Ricerca per nome
+    if (searchTerm) {
+      filtrate = filtrate.filter(b =>
+        b.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        b.tipo.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+
+    setImbarcazioniFiltrate(filtrate)
   }
 
   async function loadServiziAssociati(imbarcazioneId: string) {
@@ -352,10 +395,12 @@ export default function ImbarcazioniPage() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Imbarcazioni</h1>
-          <p className="text-gray-600 mt-1">{imbarcazioni.length} imbarcazioni registrate</p>
+          <p className="text-gray-600 mt-1">
+            {imbarcazioniFiltrate.length} di {imbarcazioni.length} imbarcazioni
+          </p>
         </div>
         <button
           onClick={() => setShowModal(true)}
@@ -365,8 +410,82 @@ export default function ImbarcazioniPage() {
         </button>
       </div>
 
+      {/* Filtri */}
+      <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Ricerca */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Cerca
+            </label>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Nome o tipo..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Filtro Fornitore */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Fornitore
+            </label>
+            <select
+              value={filtroFornitore}
+              onChange={(e) => setFiltroFornitore(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="tutti">Tutti i fornitori</option>
+              {fornitori.map(f => {
+                const count = imbarcazioni.filter(b => b.fornitore_id === f.id).length
+                return (
+                  <option key={f.id} value={f.id}>
+                    {f.ragione_sociale} ({count})
+                  </option>
+                )
+              })}
+            </select>
+          </div>
+
+          {/* Filtro Categoria */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Categoria
+            </label>
+            <select
+              value={filtroCategoria}
+              onChange={(e) => setFiltroCategoria(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="tutti">Tutte le categorie</option>
+              <option value="luxury">🟣 Luxury</option>
+              <option value="premium">🟡 Premium</option>
+              <option value="simple">🔵 Simple</option>
+            </select>
+          </div>
+
+          {/* Reset Filtri */}
+          <div className="flex items-end">
+            {(filtroFornitore !== 'tutti' || filtroCategoria !== 'tutti' || searchTerm) && (
+              <button
+                onClick={() => {
+                  setFiltroFornitore('tutti')
+                  setFiltroCategoria('tutti')
+                  setSearchTerm('')
+                }}
+                className="w-full px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                ✕ Rimuovi filtri
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {imbarcazioni.map((imbarcazione) => {
+        {imbarcazioniFiltrate.map((imbarcazione) => {
           const cat = getCategoriaLabel(imbarcazione.categoria)
           return (
             <div key={imbarcazione.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -465,10 +584,15 @@ export default function ImbarcazioniPage() {
         })}
       </div>
 
-      {imbarcazioni.length === 0 && (
+      {imbarcazioniFiltrate.length === 0 && (
         <div className="text-center py-12 bg-white rounded-xl shadow-sm border">
           <div className="text-4xl mb-3">🚤</div>
-          <p className="text-gray-500">Nessuna imbarcazione trovata</p>
+          <p className="text-gray-500">
+            {filtroFornitore !== 'tutti' || filtroCategoria !== 'tutti' || searchTerm
+              ? 'Nessuna imbarcazione trovata con i filtri selezionati'
+              : 'Nessuna imbarcazione trovata'
+            }
+          </p>
         </div>
       )}
 
