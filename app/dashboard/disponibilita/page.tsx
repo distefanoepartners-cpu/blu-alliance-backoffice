@@ -60,7 +60,7 @@ export default function PlanningSettimanale() {
 
       // Carica blocchi
       const { data: blocchiData } = await supabase
-        .from('blocchi')
+       .from('blocchi_imbarcazioni')
         .select('id, imbarcazione_id, data_inizio, data_fine, motivo, tipo')
         .lte('data_inizio', format(weekEnd, 'yyyy-MM-dd'))
         .gte('data_fine', format(currentWeekStart, 'yyyy-MM-dd'))
@@ -157,7 +157,7 @@ export default function PlanningSettimanale() {
 
     try {
       const { error } = await supabase
-        .from('blocchi')
+        .from('blocchi_imbarcazioni')
         .insert([{
           imbarcazione_id: selectedCell.imbarcazioneId,
           data_inizio: format(selectedCell.date, 'yyyy-MM-dd'),
@@ -180,7 +180,7 @@ export default function PlanningSettimanale() {
   async function rimuoviBlocco(bloccoId: string) {
     try {
       const { error } = await supabase
-        .from('blocchi')
+        .from('blocchi_imbarcazioni')
         .delete()
         .eq('id', bloccoId)
 
