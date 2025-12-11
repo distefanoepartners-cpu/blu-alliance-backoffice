@@ -55,7 +55,7 @@ export default function TourMap({
   const map = useRef<mapboxgl.Map | null>(null)
   const [isAnimating, setIsAnimating] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
-  const animationRef = useRef<number | null>(null)
+  const animationRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return
@@ -93,7 +93,7 @@ export default function TourMap({
 
     return () => {
       if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current)
+        clearTimeout(animationRef.current)
       }
       map.current?.remove()
     }
