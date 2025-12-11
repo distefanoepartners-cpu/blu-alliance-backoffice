@@ -19,7 +19,7 @@ export default function PlanningSettimanale() {
   const [showBloccoModal, setShowBloccoModal] = useState(false)
   const [selectedCell, setSelectedCell] = useState<{imbarcazioneId: string, date: Date, imbarcazioneNome: string} | null>(null)
   const [motivoBlocco, setMotivoBlocco] = useState('')
-  const [tipoBlocco, setTipoBlocco] = useState<'manutenzione' | 'prenotazione_esterna' | 'altro'>('altro')
+  const [note, setTipoBlocco] = useState<'manutenzione' | 'prenotazione_esterna' | 'altro'>('altro')
 
   useEffect(() => {
     loadData()
@@ -45,7 +45,7 @@ export default function PlanningSettimanale() {
       // Carica imbarcazioni
       const { data: barcheData } = await supabase
         .from('imbarcazioni')
-        .select('id, nome, tipo, categoria, fornitore_id')
+        .select('id, nome, note, categoria, fornitore_id')
         .eq('attiva', true)
         .order('categoria', { ascending: false })
         .order('nome')
@@ -61,7 +61,7 @@ export default function PlanningSettimanale() {
       // Carica blocchi
       const { data: blocchiData } = await supabase
        .from('blocchi_imbarcazioni')
-        .select('id, imbarcazione_id, data_inizio, data_fine, motivo, tipo')
+        .select('id, imbarcazione_id, data_inizio, data_fine, motivo, note')
         .lte('data_inizio', format(weekEnd, 'yyyy-MM-dd'))
         .gte('data_fine', format(currentWeekStart, 'yyyy-MM-dd'))
 
@@ -163,7 +163,7 @@ export default function PlanningSettimanale() {
           data_inizio: format(selectedCell.date, 'yyyy-MM-dd'),
           data_fine: format(selectedCell.date, 'yyyy-MM-dd'),
           motivo: motivoBlocco || 'Indisponibilità',
-          tipo: tipoBlocco
+          note: note
         }])
 
       if (error) throw error
@@ -355,7 +355,7 @@ export default function PlanningSettimanale() {
                     <div className="flex flex-col">
                       <span className="font-medium text-gray-900 text-xs md:text-base">{barca.nome}</span>
                       <span className="text-xs text-gray-500 hidden md:block">
-                        {barca.tipo} • {barca.categoria}
+                        {barca.note} • {barca.categoria}
                       </span>
                     </div>
                   </td>
@@ -481,7 +481,7 @@ export default function PlanningSettimanale() {
                   Tipo Blocco
                 </label>
                 <select
-                  value={tipoBlocco}
+                  value={note}
                   onChange={(e) => setTipoBlocco(e.target.value as any)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 >
