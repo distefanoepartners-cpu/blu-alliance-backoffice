@@ -55,7 +55,6 @@ export default function DashboardLayout({
 
   // Menu completo con ruoli
   const allMenuItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: '📊', roles: ['admin', 'operatore'] },
   { href: '/dashboard/disponibilita', label: 'Planning', icon: '📅', roles: ['admin', 'operatore'] },
   { href: '/dashboard/statistiche', label: 'Statistiche', icon: '📈', roles: ['admin'] },
   { href: '/dashboard/prenotazioni', label: 'Prenotazioni', icon: '📋', roles: ['admin', 'operatore'] },
