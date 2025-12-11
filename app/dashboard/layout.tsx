@@ -60,11 +60,13 @@ export default function DashboardLayout({
   { href: '/dashboard/statistiche', label: 'Statistiche', icon: '📈', roles: ['admin'] },
   { href: '/dashboard/prenotazioni', label: 'Prenotazioni', icon: '📋', roles: ['admin', 'operatore'] },
   { href: '/dashboard/calendario', label: 'Calendario', icon: '🗓️', roles: ['admin', 'operatore'] },
+  { href: '/dashboard/blocchi', label: 'Blocchi', icon: '🚫', roles: ['admin', 'operatore'] },
   { href: '/dashboard/clienti', label: 'Clienti', icon: '👥', roles: ['admin', 'operatore'] },
-  { href: '/dashboard/lead-chatbot', label: 'Lead Chatbot', icon: '💬', roles: ['admin', 'operatore'] },
+  { href: '/dashboard/chatbot-leads', label: 'Lead Chatbot', icon: '💬', roles: ['admin', 'operatore'] },
   { href: '/dashboard/servizi', label: 'Servizi', icon: '🎯', roles: ['admin'] },
   { href: '/dashboard/imbarcazioni', label: 'Imbarcazioni', icon: '🚤', roles: ['admin'] },
-  { href: '/dashboard/tour-maps', label: 'Tour Mappe', icon: '🗺️', roles: ['admin', 'operatore'] }, // ← NUOVO!
+  { href: '/dashboard/fornitori', label: 'Fornitori', icon: '🏢', roles: ['admin'] },
+  { href: '/dashboard/amministratori', label: 'Amministratori', icon: '👤', roles: ['admin'] },
 ]
 
   // Filtra menu in base al ruolo
