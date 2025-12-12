@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { Resend } from 'resend'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,15 +9,21 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const { prenotazioneId, lingua, tipo } = await request.json()
+    const body = await request.json()
+    console.log('📧 [send-confirmation] Request received:', body)
+    
+    const { prenotazioneId, lingua, tipo } = body
 
     if (!prenotazioneId) {
+      console.log('❌ [send-confirmation] Missing prenotazioneId')
       return NextResponse.json(
         { error: 'ID prenotazione mancante' },
         { status: 400 }
       )
     }
 
+    console.log('🔍 [send-confirmation] Loading booking:', prenotazioneId)
+    
     // Carica dati prenotazione completi
     const { data: prenotazione, error: prenotazioneError } = await supabase
       .from('prenotazioni')
@@ -24,24 +31,29 @@ export async function POST(request: NextRequest) {
         *,
         clienti(nome, cognome, email, telefono),
         servizi(nome, descrizione, tipo),
-        imbarcazioni(nome, tipo, categoria),
-        fornitori!imbarcazioni(ragione_sociale, email, telefono)
+        imbarcazioni(nome, tipo, categoria, fornitore_id, fornitori(ragione_sociale, email, telefono))
       `)
       .eq('id', prenotazioneId)
       .single()
 
     if (prenotazioneError || !prenotazione) {
+      console.log('❌ [send-confirmation] Booking not found:', prenotazioneError)
       return NextResponse.json(
         { error: 'Prenotazione non trovata' },
         { status: 404 }
       )
     }
 
+    console.log('✅ [send-confirmation] Booking loaded:', prenotazione.codice_prenotazione)
+    console.log('📧 [send-confirmation] Sending to:', prenotazione.clienti.email)
+
     // Prepara contenuto email in base alla lingua
     const emailContent = generateEmailContent(prenotazione, lingua || 'it', tipo || 'conferma')
 
-    // Invia email usando Resend o altro servizio
-    // Per ora simuliamo l'invio
+    console.log('📝 [send-confirmation] Email content generated')
+    console.log('📮 [send-confirmation] Subject:', emailContent.subject)
+
+    // Invia email usando Resend
     const emailSent = await sendEmail({
       to: prenotazione.clienti.email,
       subject: emailContent.subject,
@@ -49,8 +61,11 @@ export async function POST(request: NextRequest) {
     })
 
     if (!emailSent) {
+      console.log('❌ [send-confirmation] Email sending failed')
       throw new Error('Errore invio email')
     }
+
+    console.log('✅ [send-confirmation] Email sent successfully!')
 
     return NextResponse.json({ 
       success: true,
@@ -58,7 +73,7 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error: any) {
-    console.error('Errore API send-booking-email:', error)
+    console.error('❌ [send-confirmation] Error:', error)
     return NextResponse.json(
       { error: error.message || 'Errore interno' },
       { status: 500 }
@@ -268,24 +283,26 @@ function generateEmailContent(prenotazione: any, lingua: string, tipo: string) {
 
 async function sendEmail({ to, subject, html }: { to: string; subject: string; html: string }) {
   try {
-    // Implementa con Resend, SendGrid, o altro servizio email
-    // Per ora ritorna true come simulazione
+    console.log('📮 [sendEmail] Initializing Resend...')
+    console.log('📮 [sendEmail] API Key present:', !!process.env.RESEND_API_KEY)
     
-    // Esempio con Resend:
-    // const resend = new Resend(process.env.RESEND_API_KEY)
-    // await resend.emails.send({
-    //   from: 'Blu Alliance <noreply@blualliancegroup.com>',
-    //   to,
-    //   subject,
-    //   html
-    // })
+    const resend = new Resend(process.env.RESEND_API_KEY)
     
-    console.log('Email would be sent to:', to)
-    console.log('Subject:', subject)
+    console.log('📮 [sendEmail] Sending email to:', to)
+    
+    const result = await resend.emails.send({
+      from: 'Blu Alliance <noreply@blualliancegroup.com>',
+      to,
+      subject,
+      html
+    })
+    
+    console.log('✅ [sendEmail] Email sent successfully!')
+    console.log('✅ [sendEmail] Resend response:', result)
     
     return true
   } catch (error) {
-    console.error('Errore invio email:', error)
+    console.error('❌ [sendEmail] Error:', error)
     return false
   }
 }
