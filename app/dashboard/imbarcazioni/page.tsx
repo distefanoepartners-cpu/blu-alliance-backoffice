@@ -14,7 +14,7 @@ export default function ImbarcazioniPage() {
   const [showServiziModal, setShowServiziModal] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [selectedImbarcazione, setSelectedImbarcazione] = useState<any>(null)
-  const [serviziAssociati, setServiziAssociati] = useState<string[]>([])
+  const [serviziSelezionati, setServiziSelezionati] = useState<{[key: string]: boolean}>({})
   const [uploadingImage, setUploadingImage] = useState(false)
   const [filtroFornitore, setFiltroFornitore] = useState<string>('tutti')
   const [filtroCategoria, setFiltroCategoria] = useState<string>('tutti')
@@ -45,54 +45,73 @@ export default function ImbarcazioniPage() {
 
   async function loadData() {
     try {
+      setLoading(true)
+
       // Carica fornitori
-      const { data: fornitoriData, error: fornitoriError } = await supabase
+      const { data: fornitoriData } = await supabase
         .from('fornitori')
         .select('id, ragione_sociale')
         .eq('attivo', true)
         .order('ragione_sociale')
 
-      if (fornitoriError) throw fornitoriError
-
       // Carica imbarcazioni
-      const { data: imbarcazioniData, error: imbarcazioniError } = await supabase
+      const { data: imbarcazioniData } = await supabase
         .from('imbarcazioni')
         .select('*')
         .order('nome')
 
-      if (imbarcazioniError) throw imbarcazioniError
-
-      // Carica servizi
-      const { data: serviziData, error: serviziError } = await supabase
+      // Carica servizi CON prezzi per categoria
+      const { data: serviziData } = await supabase
         .from('servizi')
         .select('id, nome, tipo, prezzo_base')
         .eq('attivo', true)
         .order('nome')
 
-      if (serviziError) throw serviziError
+      // Carica prezzi per categoria
+      const { data: prezziCategoriaData } = await supabase
+        .from('servizi_prezzi_categoria')
+        .select('*')
 
-      // Carica relazioni imbarcazioni-servizi
-      const { data: relazioniData, error: relazioniError } = await supabase
-        .from('imbarcazioni_servizi')
-        .select('imbarcazione_id, servizio_id')
-        .eq('attivo', true)
+      // Carica servizi associati con prezzi dinamici DALLA VIEW
+      const { data: serviziAssociatiData } = await supabase
+        .from('vista_imbarcazioni_servizi_con_prezzi')
+        .select('*')
 
-      if (relazioniError) throw relazioniError
+      // Combina servizi con prezzi per categoria
+      const serviziConPrezzi = (serviziData || []).map(servizio => {
+        const prezzi = (prezziCategoriaData || []).filter(p => p.servizio_id === servizio.id)
+        return {
+          ...servizio,
+          prezzi_categoria: {
+            simple: prezzi.find(p => p.categoria === 'simple')?.prezzo || null,
+            premium: prezzi.find(p => p.categoria === 'premium')?.prezzo || null,
+            luxury: prezzi.find(p => p.categoria === 'luxury')?.prezzo || null
+          }
+        }
+      })
 
-      // Aggiungi servizi associati ad ogni imbarcazione
-      const imbarcazioniConServizi = imbarcazioniData?.map(imb => {
-        const serviziIds = relazioniData
-          ?.filter(r => r.imbarcazione_id === imb.id)
-          .map(r => r.servizio_id) || []
+      // Combina imbarcazioni con servizi e prezzi dinamici
+      const imbarcazioniConServizi = (imbarcazioniData || []).map(imb => {
+        const serviziDellImbarcazione = (serviziAssociatiData || [])
+          .filter(sa => sa.imbarcazione_id === imb.id)
+          .map(sa => ({
+            id: sa.servizio_id,
+            nome: sa.servizio_nome,
+            tipo: sa.servizio_tipo,
+            prezzo_base: sa.servizio_prezzo_base,
+            prezzo_finale: sa.prezzo_finale, // ← PREZZO DINAMICO
+            prezzo_personalizzato: sa.prezzo_personalizzato
+          }))
 
-        const serviziAssegnati = serviziData?.filter(s => serviziIds.includes(s.id)) || []
-
-        return { ...imb, servizi_associati: serviziAssegnati }
-      }) || []
+        return { 
+          ...imb, 
+          servizi_associati: serviziDellImbarcazione 
+        }
+      })
 
       setFornitori(fornitoriData || [])
       setImbarcazioni(imbarcazioniConServizi)
-      setServizi(serviziData || [])
+      setServizi(serviziConPrezzi)
     } catch (error: any) {
       toast.error('Errore nel caricamento')
       console.error('Errore:', error)
@@ -104,155 +123,87 @@ export default function ImbarcazioniPage() {
   function applicaFiltri() {
     let filtrate = [...imbarcazioni]
 
-    // Filtro fornitore
     if (filtroFornitore !== 'tutti') {
-      filtrate = filtrate.filter(b => b.fornitore_id === filtroFornitore)
+      filtrate = filtrate.filter(i => i.fornitore_id === filtroFornitore)
     }
 
-    // Filtro categoria
     if (filtroCategoria !== 'tutti') {
-      filtrate = filtrate.filter(b => b.categoria === filtroCategoria)
+      filtrate = filtrate.filter(i => i.categoria === filtroCategoria)
     }
 
-    // Ricerca per nome
-    if (searchTerm) {
-      filtrate = filtrate.filter(b =>
-        b.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.tipo.toLowerCase().includes(searchTerm.toLowerCase())
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase()
+      filtrate = filtrate.filter(i =>
+        i.nome.toLowerCase().includes(term) ||
+        i.tipo.toLowerCase().includes(term) ||
+        i.descrizione?.toLowerCase().includes(term)
       )
     }
 
     setImbarcazioniFiltrate(filtrate)
   }
 
-  async function loadServiziAssociati(imbarcazioneId: string) {
-    try {
-      const { data, error } = await supabase
-        .from('imbarcazioni_servizi')
-        .select('servizio_id')
-        .eq('imbarcazione_id', imbarcazioneId)
-        .eq('attivo', true)
-
-      if (error) throw error
-
-      setServiziAssociati(data?.map(r => r.servizio_id) || [])
-    } catch (error: any) {
-      console.error('Errore caricamento servizi associati:', error)
-      setServiziAssociati([])
-    }
+  function handleNew() {
+    setEditingId(null)
+    setFormData({
+      nome: '',
+      tipo: 'gommone',
+      categoria: 'simple',
+      capacita_massima: 6,
+      descrizione: '',
+      caratteristiche: '',
+      immagine_principale: '',
+      fornitore_id: '',
+      attiva: true
+    })
+    setImageFile(null)
+    setImagePreview(null)
+    setShowModal(true)
   }
 
-  async function handleToggleServizio(servizioId: string) {
-    if (!selectedImbarcazione) return
-
-    const isAssociato = serviziAssociati.includes(servizioId)
-
-    try {
-      if (isAssociato) {
-        // Rimuovi associazione
-        const { error } = await supabase
-          .from('imbarcazioni_servizi')
-          .delete()
-          .eq('imbarcazione_id', selectedImbarcazione.id)
-          .eq('servizio_id', servizioId)
-
-        if (error) throw error
-
-        setServiziAssociati(serviziAssociati.filter(id => id !== servizioId))
-        toast.success('Servizio rimosso')
-      } else {
-        // Aggiungi associazione
-        const { error } = await supabase
-          .from('imbarcazioni_servizi')
-          .insert([{
-            imbarcazione_id: selectedImbarcazione.id,
-            servizio_id: servizioId,
-            attivo: true
-          }])
-
-        if (error) throw error
-
-        setServiziAssociati([...serviziAssociati, servizioId])
-        toast.success('Servizio aggiunto')
-      }
-    } catch (error: any) {
-      console.error('Errore:', error)
-      toast.error('Errore nell\'aggiornamento')
-    }
-  }
-
-  function openServiziModal(imbarcazione: any) {
-    setSelectedImbarcazione(imbarcazione)
-    loadServiziAssociati(imbarcazione.id)
-    setShowServiziModal(true)
+  function handleEdit(imbarcazione: any) {
+    setEditingId(imbarcazione.id)
+    setFormData({
+      nome: imbarcazione.nome,
+      tipo: imbarcazione.tipo,
+      categoria: imbarcazione.categoria,
+      capacita_massima: imbarcazione.capacita_massima,
+      descrizione: imbarcazione.descrizione || '',
+      caratteristiche: imbarcazione.caratteristiche || '',
+      immagine_principale: imbarcazione.immagine_principale || '',
+      fornitore_id: imbarcazione.fornitore_id || '',
+      attiva: imbarcazione.attiva
+    })
+    setImageFile(null)
+    setImagePreview(imbarcazione.immagine_principale || null)
+    setShowModal(true)
   }
 
   function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if (!file) return
-
-    if (!file.type.startsWith('image/')) {
-      toast.error('Seleziona un file immagine valido')
-      return
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Immagine troppo grande (max 5MB)')
-      return
-    }
-
-    setImageFile(file)
-
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string)
-    }
-    reader.readAsDataURL(file)
-  }
-
-  async function uploadImage() {
-    if (!imageFile) return null
-
-    try {
-      setUploadingImage(true)
-
-      const fileExt = imageFile.name.split('.').pop()
-      const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`
-      const filePath = `${fileName}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('imbarcazioni')
-        .upload(filePath, imageFile)
-
-      if (uploadError) throw uploadError
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('imbarcazioni')
-        .getPublicUrl(filePath)
-
-      return publicUrl
-    } catch (error: any) {
-      console.error('Errore upload:', error)
-      toast.error('Errore nel caricamento immagine')
-      return null
-    } finally {
-      setUploadingImage(false)
+    if (file) {
+      setImageFile(file)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
     }
   }
 
-  async function deleteImage(imageUrl: string) {
-    try {
-      const urlParts = imageUrl.split('/')
-      const fileName = urlParts[urlParts.length - 1]
+  async function uploadImage(file: File): Promise<string> {
+    const fileName = `${Date.now()}-${file.name}`
+    const { data, error } = await supabase.storage
+      .from('imbarcazioni')
+      .upload(fileName, file)
 
-      const { error } = await supabase.storage
-        .from('imbarcazioni')
-        .remove([fileName])
+    if (error) throw error
 
-      if (error) throw error
-    } catch (error: any) {
-      console.error('Errore eliminazione immagine:', error)
-    }
+    const { data: urlData } = supabase.storage
+      .from('imbarcazioni')
+      .getPublicUrl(fileName)
+
+    return urlData.publicUrl
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -262,28 +213,13 @@ export default function ImbarcazioniPage() {
       let imageUrl = formData.immagine_principale
 
       if (imageFile) {
-        const uploadedUrl = await uploadImage()
-        if (!uploadedUrl) throw new Error('Errore upload immagine')
-
-        if (editingId && formData.immagine_principale) {
-          await deleteImage(formData.immagine_principale)
-        }
-
-        imageUrl = uploadedUrl
+        setUploadingImage(true)
+        imageUrl = await uploadImage(imageFile)
       }
 
       const dataToSave = {
-        nome: formData.nome,
-        tipo: formData.tipo,
-        categoria: formData.categoria,
-        capacita_massima: formData.capacita_massima,
-        descrizione: formData.descrizione || null,
-        caratteristiche: formData.caratteristiche
-          ? formData.caratteristiche.split(',').map(c => c.trim()).filter(c => c)
-          : [],
-        immagine_principale: imageUrl || null,
-        fornitore_id: formData.fornitore_id || null,
-        attiva: formData.attiva
+        ...formData,
+        immagine_principale: imageUrl
       }
 
       if (editingId) {
@@ -303,28 +239,20 @@ export default function ImbarcazioniPage() {
         toast.success('Imbarcazione creata!')
       }
 
-      resetForm()
+      setShowModal(false)
       loadData()
     } catch (error: any) {
-      console.error('Errore:', error)
+      console.error('Errore salvataggio:', error)
       toast.error(error.message || 'Errore nel salvataggio')
+    } finally {
+      setUploadingImage(false)
     }
   }
 
-  async function handleDelete(id: string, imageUrl: string | null) {
+  async function handleDelete(id: string) {
     if (!confirm('Sei sicuro di voler eliminare questa imbarcazione?')) return
 
     try {
-      if (imageUrl) {
-        await deleteImage(imageUrl)
-      }
-
-      // Elimina prima le associazioni con i servizi
-      await supabase
-        .from('imbarcazioni_servizi')
-        .delete()
-        .eq('imbarcazione_id', id)
-
       const { error } = await supabase
         .from('imbarcazioni')
         .delete()
@@ -335,79 +263,108 @@ export default function ImbarcazioniPage() {
       toast.success('Imbarcazione eliminata!')
       loadData()
     } catch (error: any) {
-      console.error('Errore:', error)
+      console.error('Errore eliminazione:', error)
       toast.error('Errore nell\'eliminazione')
     }
   }
 
-  function handleEdit(imbarcazione: any) {
-    setEditingId(imbarcazione.id)
-    setFormData({
-      nome: imbarcazione.nome,
-      tipo: imbarcazione.tipo,
-      categoria: imbarcazione.categoria || 'simple',
-      capacita_massima: imbarcazione.capacita_massima,
-      descrizione: imbarcazione.descrizione || '',
-      caratteristiche: Array.isArray(imbarcazione.caratteristiche)
-        ? imbarcazione.caratteristiche.join(', ')
-        : '',
-      immagine_principale: imbarcazione.immagine_principale || '',
-      fornitore_id: imbarcazione.fornitore_id || '',
-      attiva: imbarcazione.attiva
+  function openServiziModal(imbarcazione: any) {
+    setSelectedImbarcazione(imbarcazione)
+    
+    // Prepara checkbox stati
+    const stati: {[key: string]: boolean} = {}
+    imbarcazione.servizi_associati.forEach((s: any) => {
+      stati[s.id] = true
     })
-    setImagePreview(imbarcazione.immagine_principale)
-    setShowModal(true)
+    setServiziSelezionati(stati)
+    
+    setShowServiziModal(true)
   }
 
-  function resetForm() {
-    setFormData({
-      nome: '',
-      tipo: 'gommone',
-      categoria: 'simple',
-      capacita_massima: 6,
-      descrizione: '',
-      caratteristiche: '',
-      immagine_principale: '',
-      fornitore_id: '',
-      attiva: true
-    })
-    setEditingId(null)
-    setShowModal(false)
-    setImageFile(null)
-    setImagePreview(null)
+  function toggleServizio(servizioId: string) {
+    setServiziSelezionati(prev => ({
+      ...prev,
+      [servizioId]: !prev[servizioId]
+    }))
   }
 
-  function removeImagePreview() {
-    setImageFile(null)
-    setImagePreview(null)
-    if (!editingId) {
-      setFormData({ ...formData, immagine_principale: '' })
+  function getPrezzoServizioPerCategoria(servizio: any, categoria: string): number | null {
+    return servizio.prezzi_categoria?.[categoria] || servizio.prezzo_base || null
+  }
+
+  async function handleSalvaServizi() {
+    if (!selectedImbarcazione) return
+
+    try {
+      // Rimuovi tutti i servizi esistenti
+      await supabase
+        .from('imbarcazioni_servizi')
+        .delete()
+        .eq('imbarcazione_id', selectedImbarcazione.id)
+
+      // Aggiungi servizi selezionati (senza prezzo, viene calcolato dinamicamente)
+      const serviziDaInserire = Object.entries(serviziSelezionati)
+        .filter(([_, isSelected]) => isSelected)
+        .map(([servizioId]) => ({
+          imbarcazione_id: selectedImbarcazione.id,
+          servizio_id: servizioId,
+          attivo: true,
+          prezzo_personalizzato: null // NULL = usa prezzo dinamico
+        }))
+
+      if (serviziDaInserire.length > 0) {
+        const { error } = await supabase
+          .from('imbarcazioni_servizi')
+          .insert(serviziDaInserire)
+
+        if (error) throw error
+      }
+
+      toast.success('Servizi aggiornati!')
+      setShowServiziModal(false)
+      loadData()
+    } catch (error: any) {
+      console.error('Errore salvataggio servizi:', error)
+      toast.error('Errore nel salvataggio')
     }
   }
 
-  function getCategoriaLabel(categoria: string) {
+  const getCategoriaColor = (categoria: string) => {
     switch (categoria) {
-      case 'luxury': return { label: '🟣 Luxury', bg: 'bg-purple-100', text: 'text-purple-700' }
-      case 'premium': return { label: '🟡 Premium', bg: 'bg-yellow-100', text: 'text-yellow-700' }
-      default: return { label: '🔵 Simple', bg: 'bg-blue-100', text: 'text-blue-700' }
+      case 'simple': return 'bg-green-100 text-green-700'
+      case 'premium': return 'bg-yellow-100 text-yellow-700'
+      case 'luxury': return 'bg-purple-100 text-purple-700'
+      default: return 'bg-gray-100 text-gray-700'
+    }
+  }
+
+  const getCategoriaLabel = (categoria: string) => {
+    switch (categoria) {
+      case 'simple': return 'Simple'
+      case 'premium': return 'Premium'
+      case 'luxury': return 'Luxury'
+      default: return categoria
     }
   }
 
   if (loading) {
-    return <div className="p-8"><div className="text-gray-600">Caricamento...</div></div>
+    return (
+      <div className="p-8">
+        <div className="text-gray-600">Caricamento imbarcazioni...</div>
+      </div>
+    )
   }
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Imbarcazioni</h1>
-          <p className="text-gray-600 mt-1">
-            {imbarcazioniFiltrate.length} di {imbarcazioni.length} imbarcazioni
-          </p>
+          <p className="text-gray-600 mt-1">Gestisci la flotta disponibile</p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={handleNew}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
           + Nuova Imbarcazione
@@ -415,177 +372,172 @@ export default function ImbarcazioniPage() {
       </div>
 
       {/* Filtri */}
-      <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Ricerca */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Search */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Cerca
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Cerca</label>
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Nome o tipo..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="Nome, tipo, descrizione..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             />
           </div>
 
-          {/* Filtro Fornitore */}
+          {/* Fornitore */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Fornitore
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Fornitore</label>
             <select
               value={filtroFornitore}
               onChange={(e) => setFiltroFornitore(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             >
               <option value="tutti">Tutti i fornitori</option>
-              {fornitori.map(f => {
-                const count = imbarcazioni.filter(b => b.fornitore_id === f.id).length
-                return (
-                  <option key={f.id} value={f.id}>
-                    {f.ragione_sociale} ({count})
-                  </option>
-                )
-              })}
+              {fornitori.map(f => (
+                <option key={f.id} value={f.id}>{f.ragione_sociale}</option>
+              ))}
             </select>
           </div>
 
-          {/* Filtro Categoria */}
+          {/* Categoria */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Categoria
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Categoria</label>
             <select
               value={filtroCategoria}
               onChange={(e) => setFiltroCategoria(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             >
               <option value="tutti">Tutte le categorie</option>
-              <option value="luxury">🟣 Luxury</option>
-              <option value="premium">🟡 Premium</option>
-              <option value="simple">🔵 Simple</option>
+              <option value="simple">Simple</option>
+              <option value="premium">Premium</option>
+              <option value="luxury">Luxury</option>
             </select>
-          </div>
-
-          {/* Reset Filtri */}
-          <div className="flex items-end">
-            {(filtroFornitore !== 'tutti' || filtroCategoria !== 'tutti' || searchTerm) && (
-              <button
-                onClick={() => {
-                  setFiltroFornitore('tutti')
-                  setFiltroCategoria('tutti')
-                  setSearchTerm('')
-                }}
-                className="w-full px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                ✕ Rimuovi filtri
-              </button>
-            )}
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Statistiche */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white p-4 rounded-lg border">
+          <div className="text-sm text-gray-600">Totale</div>
+          <div className="text-2xl font-bold text-gray-900">{imbarcazioni.length}</div>
+        </div>
+        <div className="bg-white p-4 rounded-lg border">
+          <div className="text-sm text-gray-600">Simple</div>
+          <div className="text-2xl font-bold text-green-600">
+            {imbarcazioni.filter(i => i.categoria === 'simple').length}
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-lg border">
+          <div className="text-sm text-gray-600">Premium</div>
+          <div className="text-2xl font-bold text-yellow-600">
+            {imbarcazioni.filter(i => i.categoria === 'premium').length}
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-lg border">
+          <div className="text-sm text-gray-600">Luxury</div>
+          <div className="text-2xl font-bold text-purple-600">
+            {imbarcazioni.filter(i => i.categoria === 'luxury').length}
+          </div>
+        </div>
+      </div>
+
+      {/* Lista Imbarcazioni */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
         {imbarcazioniFiltrate.map((imbarcazione) => {
-          const cat = getCategoriaLabel(imbarcazione.categoria)
+          const fornitore = fornitori.find(f => f.id === imbarcazione.fornitore_id)
+          
           return (
-            <div key={imbarcazione.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div key={imbarcazione.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
               {/* Immagine */}
-              <div className="h-48 bg-gray-100 relative">
-                {imbarcazione.immagine_principale ? (
+              {imbarcazione.immagine_principale && (
+                <div className="relative h-48 bg-gray-100">
                   <img
                     src={imbarcazione.immagine_principale}
                     alt={imbarcazione.nome}
                     className="w-full h-full object-cover"
                   />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-400">
-                    <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                )}
-                <div className="absolute top-2 right-2 flex gap-2">
-                  <span className={`px-2 py-1 rounded-full text-xs font-semibold ${cat.bg} ${cat.text}`}>
-                    {cat.label}
-                  </span>
-                  <span className={`px-2 py-1 rounded-full text-xs font-semibold ${imbarcazione.attiva
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-red-100 text-red-800'
+                  <div className="absolute top-3 right-3 flex gap-2">
+                    <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getCategoriaColor(imbarcazione.categoria)}`}>
+                      {getCategoriaLabel(imbarcazione.categoria)}
+                    </span>
+                    <span className={`px-3 py-1 text-xs rounded-full ${
+                      imbarcazione.attiva ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
                     }`}>
-                    {imbarcazione.attiva ? 'Attiva' : 'Non Attiva'}
-                  </span>
+                      {imbarcazione.attiva ? 'Attiva' : 'Inattiva'}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Info */}
               <div className="p-6">
-                <h3 className="text-xl font-bold text-gray-900 mb-2">{imbarcazione.nome}</h3>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm text-gray-600 capitalize">{imbarcazione.tipo}</span>
+                <div className="mb-4">
+                  <h3 className="text-xl font-bold text-gray-900 mb-1">{imbarcazione.nome}</h3>
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <span className="capitalize">{imbarcazione.tipo}</span>
+                    {fornitore && (
+                      <>
+                        <span>•</span>
+                        <span className="flex items-center gap-1">
+                          <span>🏢</span>
+                          {fornitore.ragione_sociale}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-600 mt-1">
+                    Capacità: {imbarcazione.capacita_massima} persone
+                  </div>
                 </div>
-                {imbarcazione.fornitore_id && (
-                  <p className="text-xs text-gray-500 mb-2">
-                    🏢 {fornitori.find(f => f.id === imbarcazione.fornitore_id)?.ragione_sociale || 'Fornitore'}
-                  </p>
-                )}
-                <p className="text-sm text-gray-600 mb-3">
-                  Capacità: {imbarcazione.capacita_massima} persone
-                </p>
 
                 {imbarcazione.descrizione && (
-                  <p className="text-sm text-gray-700 mb-4 line-clamp-2">{imbarcazione.descrizione}</p>
-                )}
-
-                {Array.isArray(imbarcazione.caratteristiche) && imbarcazione.caratteristiche.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mb-4">
-                    {imbarcazione.caratteristiche.map((car: string, idx: number) => (
-                      <span key={idx} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">
-                        {car}
-                      </span>
-                    ))}
-                  </div>
+                  <p className="text-sm text-gray-600 mb-4 line-clamp-2">
+                    {imbarcazione.descrizione}
+                  </p>
                 )}
 
                 {/* Servizi Associati */}
-                {imbarcazione.servizi_associati && imbarcazione.servizi_associati.length > 0 && (
-                  <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-                    <p className="text-xs font-semibold text-blue-700 mb-2">📋 Servizi Disponibili:</p>
+                {imbarcazione.servizi_associati?.length > 0 && (
+                  <div className="mb-4 bg-blue-50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm font-semibold text-blue-900">📋 Servizi Disponibili:</span>
+                    </div>
                     <div className="space-y-1">
                       {imbarcazione.servizi_associati.map((servizio: any) => (
-                        <div key={servizio.id} className="flex justify-between items-center text-xs">
+                        <div key={servizio.id} className="flex items-center justify-between text-sm">
                           <span className="text-gray-700">{servizio.nome}</span>
-                          <span className="text-blue-600 font-medium">€{Number(servizio.prezzo_base).toFixed(0)}</span>
+                          <span className="font-semibold text-blue-600">
+                            €{servizio.prezzo_finale?.toLocaleString() || servizio.prezzo_base?.toLocaleString() || '0'}
+                          </span>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
 
-                <div className="flex flex-col gap-2">
+                {/* Actions */}
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => openServiziModal(imbarcazione)}
-                    className="w-full px-3 py-2 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 text-sm font-medium"
+                    className="px-3 py-2 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 text-sm font-medium"
                   >
-                    🎯 Gestisci Servizi
+                    🎯 Servizi
                   </button>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleEdit(imbarcazione)}
-                      className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-sm"
-                    >
-                      Modifica
-                    </button>
-                    <button
-                      onClick={() => handleDelete(imbarcazione.id, imbarcazione.immagine_principale)}
-                      className="flex-1 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 text-sm"
-                    >
-                      Elimina
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => handleEdit(imbarcazione)}
+                    className="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-sm font-medium"
+                  >
+                    Modifica
+                  </button>
+                  <button
+                    onClick={() => handleDelete(imbarcazione.id)}
+                    className="px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 text-sm font-medium"
+                  >
+                    Elimina
+                  </button>
                 </div>
               </div>
             </div>
@@ -596,112 +548,67 @@ export default function ImbarcazioniPage() {
       {imbarcazioniFiltrate.length === 0 && (
         <div className="text-center py-12 bg-white rounded-xl shadow-sm border">
           <div className="text-4xl mb-3">🚤</div>
-          <p className="text-gray-500">
-            {filtroFornitore !== 'tutti' || filtroCategoria !== 'tutti' || searchTerm
+          <p className="text-gray-500 mb-4">
+            {searchTerm || filtroFornitore !== 'tutti' || filtroCategoria !== 'tutti'
               ? 'Nessuna imbarcazione trovata con i filtri selezionati'
-              : 'Nessuna imbarcazione trovata'
-            }
+              : 'Nessuna imbarcazione configurata'}
           </p>
+          {!searchTerm && filtroFornitore === 'tutti' && filtroCategoria === 'tutti' && (
+            <button
+              onClick={handleNew}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Crea Prima Imbarcazione
+            </button>
+          )}
         </div>
       )}
 
-      {/* Modal Imbarcazione */}
+      {/* Modal Crea/Modifica Imbarcazione */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b flex items-center justify-between">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-2xl w-full my-8">
+            <div className="p-6 border-b flex items-center justify-between sticky top-0 bg-white z-10">
               <h2 className="text-2xl font-bold text-gray-900">
                 {editingId ? 'Modifica Imbarcazione' : 'Nuova Imbarcazione'}
               </h2>
-              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600 text-2xl">
+              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">
                 ×
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              {/* Upload Immagine */}
+            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+              {/* Immagine */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Immagine Principale
-                </label>
-
-                {imagePreview ? (
-                  <div className="relative">
-                    <img
-                      src={imagePreview}
-                      alt="Preview"
-                      className="w-full h-64 object-cover rounded-lg"
-                    />
-                    <button
-                      type="button"
-                      onClick={removeImagePreview}
-                      className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
-                    >
-                      ✕ Rimuovi
-                    </button>
-                  </div>
-                ) : (
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageSelect}
-                      className="hidden"
-                      id="image-upload"
-                    />
-                    <label htmlFor="image-upload" className="cursor-pointer">
-                      <div className="text-gray-400 mb-2">
-                        <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                      </div>
-                      <p className="text-sm text-gray-600">
-                        Clicca per caricare un&apos;immagine
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        PNG, JPG, WEBP fino a 5MB
-                      </p>
-                    </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Immagine</label>
+                {imagePreview && (
+                  <div className="mb-3">
+                    <img src={imagePreview} alt="Preview" className="w-full h-48 object-cover rounded-lg" />
                   </div>
                 )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Nome *</label>
                 <input
-                  type="text"
-                  value={formData.nome}
-                  onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  required
                 />
               </div>
 
-              {/* Fornitore */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Fornitore
-                </label>
-                <select
-                  value={formData.fornitore_id}
-                  onChange={(e) => setFormData({ ...formData, fornitore_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                >
-                  <option value="">Nessun fornitore</option>
-                  {fornitori.map(f => (
-                    <option key={f.id} value={f.id}>
-                      {f.ragione_sociale}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-gray-500 mt-1">
-                  Seleziona il fornitore proprietario dell'imbarcazione
-                </p>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
+              {/* Info Base */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Tipo *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Nome *</label>
+                  <input
+                    type="text"
+                    value={formData.nome}
+                    onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Tipo</label>
                   <select
                     value={formData.tipo}
                     onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
@@ -709,11 +616,9 @@ export default function ImbarcazioniPage() {
                   >
                     <option value="gommone">Gommone</option>
                     <option value="barca">Barca</option>
-                    <option value="barca_vela">Barca a Vela</option>
-                    <option value="gozzo">Gozzo</option>
                     <option value="yacht">Yacht</option>
                     <option value="catamarano">Catamarano</option>
-                    <option value="motoscafo">Motoscafo</option>
+                    <option value="gozzo">Gozzo</option>
                   </select>
                 </div>
 
@@ -723,23 +628,37 @@ export default function ImbarcazioniPage() {
                     value={formData.categoria}
                     onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
                   >
-                    <option value="simple">🔵 Simple</option>
-                    <option value="premium">🟡 Premium</option>
-                    <option value="luxury">🟣 Luxury</option>
+                    <option value="simple">Simple</option>
+                    <option value="premium">Premium</option>
+                    <option value="luxury">Luxury</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Capacità *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Capacità Max</label>
                   <input
                     type="number"
                     value={formData.capacita_massima}
                     onChange={(e) => setFormData({ ...formData, capacita_massima: parseInt(e.target.value) })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     min="1"
-                    required
                   />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Fornitore</label>
+                  <select
+                    value={formData.fornitore_id}
+                    onChange={(e) => setFormData({ ...formData, fornitore_id: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="">Seleziona fornitore</option>
+                    {fornitori.map(f => (
+                      <option key={f.id} value={f.id}>{f.ragione_sociale}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -750,52 +669,49 @@ export default function ImbarcazioniPage() {
                   onChange={(e) => setFormData({ ...formData, descrizione: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   rows={3}
-                  placeholder="Descrizione dell'imbarcazione..."
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Caratteristiche
-                </label>
-                <input
-                  type="text"
+                <label className="block text-sm font-medium text-gray-700 mb-2">Caratteristiche</label>
+                <textarea
                   value={formData.caratteristiche}
                   onChange={(e) => setFormData({ ...formData, caratteristiche: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  placeholder="Cabina, bagno, aria condizionata (separati da virgola)"
+                  rows={2}
+                  placeholder="Es: Tendalino, doccetta, igloo con ghiaccio..."
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Separa le caratteristiche con virgole
-                </p>
               </div>
 
-              <div>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={formData.attiva}
-                    onChange={(e) => setFormData({ ...formData, attiva: e.target.checked })}
-                    className="w-4 h-4 text-blue-600"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Imbarcazione attiva</span>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="attiva"
+                  checked={formData.attiva}
+                  onChange={(e) => setFormData({ ...formData, attiva: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 rounded"
+                />
+                <label htmlFor="attiva" className="text-sm font-medium text-gray-700">
+                  Imbarcazione attiva
                 </label>
               </div>
 
-              <div className="flex gap-3 pt-4">
+              {/* Actions */}
+              <div className="flex gap-3 pt-4 border-t">
                 <button
                   type="button"
-                  onClick={resetForm}
+                  onClick={() => setShowModal(false)}
                   className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                  disabled={uploadingImage}
                 >
                   Annulla
                 </button>
                 <button
                   type="submit"
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300"
                   disabled={uploadingImage}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {uploadingImage ? 'Caricamento...' : editingId ? 'Aggiorna' : 'Crea'}
+                  {uploadingImage ? 'Caricamento...' : editingId ? 'Aggiorna' : 'Crea Imbarcazione'}
                 </button>
               </div>
             </form>
@@ -806,69 +722,98 @@ export default function ImbarcazioniPage() {
       {/* Modal Gestione Servizi */}
       {showServiziModal && selectedImbarcazione && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="p-6 border-b flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">Gestisci Servizi</h2>
-                <p className="text-sm text-gray-600 mt-1">{selectedImbarcazione.nome}</p>
+                <h2 className="text-2xl font-bold text-gray-900">Gestisci Servizi</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  {selectedImbarcazione.nome} • <span className={`font-semibold ${getCategoriaColor(selectedImbarcazione.categoria).replace('bg-', 'text-').replace('-100', '-600')}`}>
+                    {getCategoriaLabel(selectedImbarcazione.categoria)}
+                  </span>
+                </p>
               </div>
-              <button
-                onClick={() => setShowServiziModal(false)}
-                className="text-gray-400 hover:text-gray-600 text-2xl"
-              >
+              <button onClick={() => setShowServiziModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">
                 ×
               </button>
             </div>
 
-            <div className="p-6">
-              <p className="text-sm text-gray-600 mb-4">
-                Seleziona i servizi che questa imbarcazione può erogare:
-              </p>
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <p className="text-sm text-blue-900">
+                  💡 <strong>Prezzi Dinamici:</strong> I prezzi mostrati sono automaticamente calcolati in base alla categoria della barca ({getCategoriaLabel(selectedImbarcazione.categoria)}).
+                </p>
+              </div>
 
-              <div className="space-y-2">
-                {servizi.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">Nessun servizio disponibile</p>
-                ) : (
-                  servizi.map((servizio) => {
-                    const isAssociato = serviziAssociati.includes(servizio.id)
-                    return (
-                      <div
-                        key={servizio.id}
-                        onClick={() => handleToggleServizio(servizio.id)}
-                        className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${isAssociato
-                            ? 'border-green-500 bg-green-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                          }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="font-medium text-gray-900">{servizio.nome}</h4>
-                            <p className="text-sm text-gray-500">
-                              {servizio.tipo} • €{Number(servizio.prezzo_base).toFixed(2)}
-                            </p>
+              <div className="space-y-3">
+                {servizi.map(servizio => {
+                  const prezzoDinamico = getPrezzoServizioPerCategoria(servizio, selectedImbarcazione.categoria)
+                  const isSelected = serviziSelezionati[servizio.id] || false
+
+                  return (
+                    <div
+                      key={servizio.id}
+                      className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
+                      }`}
+                      onClick={() => toggleServizio(servizio.id)}
+                    >
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}}
+                          className="mt-1 w-4 h-4 text-blue-600 rounded"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-1">
+                            <h4 className="font-semibold text-gray-900">{servizio.nome}</h4>
+                            <span className="text-lg font-bold text-blue-600">
+                              €{prezzoDinamico?.toLocaleString() || '0'}
+                            </span>
                           </div>
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center ${isAssociato ? 'bg-green-500 text-white' : 'bg-gray-200'
-                            }`}>
-                            {isAssociato && '✓'}
+                          <p className="text-sm text-gray-600 capitalize">{servizio.tipo}</p>
+                          
+                          {/* Mostra tutti i prezzi per riferimento */}
+                          <div className="mt-2 flex gap-3 text-xs">
+                            {servizio.prezzi_categoria.simple && (
+                              <span className="text-gray-500">
+                                Simple: €{servizio.prezzi_categoria.simple}
+                              </span>
+                            )}
+                            {servizio.prezzi_categoria.premium && (
+                              <span className="text-gray-500">
+                                Premium: €{servizio.prezzi_categoria.premium}
+                              </span>
+                            )}
+                            {servizio.prezzi_categoria.luxury && (
+                              <span className="text-gray-500">
+                                Luxury: €{servizio.prezzi_categoria.luxury}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
-                    )
-                  })
-                )}
+                    </div>
+                  )
+                })}
               </div>
+            </div>
 
-              <div className="mt-6 pt-4 border-t flex items-center justify-between">
-                <p className="text-sm text-gray-500">
-                  {serviziAssociati.length} servizi associati
-                </p>
-                <button
-                  onClick={() => setShowServiziModal(false)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Fatto
-                </button>
-              </div>
+            <div className="p-6 border-t bg-gray-50 flex gap-3">
+              <button
+                onClick={() => setShowServiziModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-white"
+              >
+                Annulla
+              </button>
+              <button
+                onClick={handleSalvaServizi}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Salva Servizi
+              </button>
             </div>
           </div>
         </div>
