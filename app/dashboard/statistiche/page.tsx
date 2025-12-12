@@ -49,7 +49,7 @@ export default function StatistichePage() {
             nome,
             tipo,
             categoria,
-            prenotazioni!imbarcazioni_prenotazioni_imbarcazione_id_fkey(
+            prenotazioni!prenotazioni_imbarcazione_id_fkey(
               id,
               prezzo_totale,
               caparra_ricevuta,
@@ -153,7 +153,7 @@ export default function StatistichePage() {
           id,
           nome,
           tipo,
-          prenotazioni!servizi_prenotazioni_servizio_id_fkey(
+          prenotazioni!prenotazioni_servizio_id_fkey(
             id,
             prezzo_totale,
             stato,
