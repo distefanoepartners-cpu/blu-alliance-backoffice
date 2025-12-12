@@ -2,173 +2,229 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { format, startOfWeek, startOfMonth, subDays, eachDayOfInterval } from 'date-fns'
+import { format, startOfMonth, endOfMonth, subMonths, eachMonthOfInterval } from 'date-fns'
 import { it } from 'date-fns/locale'
+import toast from 'react-hot-toast'
 
 export default function StatistichePage() {
-  const [stats, setStats] = useState({
-    ricaviOggi: 0,
-    ricaviSettimana: 0,
-    ricaviMese: 0,
-    prenotazioniTotali: 0,
-    prenotazioniOggi: 0,
-    prenotazioniSettimana: 0,
-    inAttesa: 0,
-    confermate: 0,
-    completate: 0,
-    cancellate: 0
-  })
-  
-  const [graficoData, setGraficoData] = useState<any[]>([])
-  const [imbarcazioniStats, setImbarcazioniStats] = useState<any[]>([])
-  const [topClienti, setTopClienti] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [fornitori, setFornitori] = useState<any[]>([])
+  const [statisticheGenerali, setStatisticheGenerali] = useState<any>(null)
+  const [topServizi, setTopServizi] = useState<any[]>([])
+  const [trendMensile, setTrendMensile] = useState<any[]>([])
+  const [selectedFornitore, setSelectedFornitore] = useState<string>('tutti')
+  const [periodoAnalisi, setPeriodoAnalisi] = useState<string>('anno') // anno, semestre, trimestre
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [selectedFornitore, periodoAnalisi])
 
   async function loadData() {
     try {
-      // Carica tutte le prenotazioni
-      const { data: prenotazioni } = await supabase
-        .from('vista_prenotazioni_complete')
-        .select('*')
-        .order('data_servizio', { ascending: false })
+      setLoading(true)
 
-      if (!prenotazioni) return
-
+      // Calcola date periodo
       const oggi = new Date()
-      oggi.setHours(0, 0, 0, 0)
+      let dataInizio: Date
       
-      const inizioSettimana = startOfWeek(oggi, { locale: it })
-      const inizioMese = startOfMonth(oggi)
+      switch (periodoAnalisi) {
+        case 'trimestre':
+          dataInizio = subMonths(oggi, 3)
+          break
+        case 'semestre':
+          dataInizio = subMonths(oggi, 6)
+          break
+        default: // anno
+          dataInizio = subMonths(oggi, 12)
+      }
 
-      // Calcola ricavi
-      let ricaviOggi = 0
-      let ricaviSettimana = 0
-      let ricaviMese = 0
-      let prenotazioniOggi = 0
-      let prenotazioniSettimana = 0
+      // 1. Statistiche per Fornitore
+      let query = supabase
+        .from('fornitori')
+        .select(`
+          id,
+          ragione_sociale,
+          imbarcazioni(
+            id,
+            nome,
+            tipo,
+            categoria,
+            prenotazioni!imbarcazioni_prenotazioni_imbarcazione_id_fkey(
+              id,
+              prezzo_totale,
+              caparra_ricevuta,
+              saldo_ricevuto,
+              stato,
+              data_servizio
+            )
+          )
+        `)
+        .eq('attivo', true)
 
-      // Statistiche per stato
-      let inAttesa = 0
-      let confermate = 0
-      let completate = 0
-      let cancellate = 0
+      const { data: fornitoriData, error: fornitoriError } = await query
 
-      prenotazioni.forEach((p: any) => {
-        const dataServizio = new Date(p.data_servizio)
-        dataServizio.setHours(0, 0, 0, 0)
+      if (fornitoriError) throw fornitoriError
+
+      // Elabora statistiche fornitori
+      const fornitoriStats = (fornitoriData || []).map(fornitore => {
+        const imbarcazioni = fornitore.imbarcazioni || []
         
-        const ricevuto = Number(p.caparra_ricevuta || 0) + Number(p.saldo_ricevuto || 0)
+        // Filtra prenotazioni valide nel periodo
+        const prenotazioniValide = imbarcazioni.flatMap((imb: any) => 
+          (imb.prenotazioni || []).filter((p: any) => 
+            p.stato !== 'cancellata' &&
+            new Date(p.data_servizio) >= dataInizio &&
+            new Date(p.data_servizio) <= oggi
+          )
+        )
 
-        // Ricavi
-        if (dataServizio.getTime() === oggi.getTime()) {
-          ricaviOggi += ricevuto
-          prenotazioniOggi++
-        }
-        if (dataServizio >= inizioSettimana) {
-          ricaviSettimana += ricevuto
-          prenotazioniSettimana++
-        }
-        if (dataServizio >= inizioMese) {
-          ricaviMese += ricevuto
-        }
+        const revenueFormattedTotale = prenotazioniValide.reduce((sum: number, p: any) => 
+          sum + (parseFloat(p.prezzo_totale) || 0), 0
+        )
 
-        // Stati
-        if (p.stato === 'in_attesa') inAttesa++
-        else if (p.stato === 'confermata') confermate++
-        else if (p.stato === 'completata') completate++
-        else if (p.stato === 'cancellata') cancellate++
+        const incassato = prenotazioniValide.reduce((sum: number, p: any) => 
+          sum + (parseFloat(p.caparra_ricevuta) || 0) + (parseFloat(p.saldo_ricevuto) || 0), 0
+        )
+
+        const daIncassare = revenueFormattedTotale - incassato
+
+        // Calcola per categoria
+        const categorieStats = ['simple', 'premium', 'luxury'].map(cat => {
+          const imbarcazioniCategoria = imbarcazioni.filter((i: any) => i.categoria === cat)
+          const prenotazioniCat = imbarcazioniCategoria.flatMap((imb: any) => 
+            (imb.prenotazioni || []).filter((p: any) => 
+              p.stato !== 'cancellata' &&
+              new Date(p.data_servizio) >= dataInizio &&
+              new Date(p.data_servizio) <= oggi
+            )
+          )
+          const revenueCat = prenotazioniCat.reduce((sum: number, p: any) => 
+            sum + (parseFloat(p.prezzo_totale) || 0), 0
+          )
+          return {
+            categoria: cat,
+            revenue: revenueCat,
+            prenotazioni: prenotazioniCat.length,
+            barche: imbarcazioniCategoria.length
+          }
+        })
+
+        return {
+          id: fornitore.id,
+          nome: fornitore.ragione_sociale,
+          num_barche: imbarcazioni.length,
+          num_prenotazioni: prenotazioniValide.length,
+          revenue_totale: revenueFormattedTotale,
+          incassato: incassato,
+          da_incassare: daIncassare,
+          ticket_medio: prenotazioniValide.length > 0 
+            ? revenueFormattedTotale / prenotazioniValide.length 
+            : 0,
+          categorie: categorieStats,
+          imbarcazioni: imbarcazioni
+        }
       })
 
-      setStats({
-        ricaviOggi,
-        ricaviSettimana,
-        ricaviMese,
-        prenotazioniTotali: prenotazioni.length,
-        prenotazioniOggi,
-        prenotazioniSettimana,
-        inAttesa,
-        confermate,
-        completate,
-        cancellate
+      // Ordina per revenue
+      fornitoriStats.sort((a, b) => b.revenue_totale - a.revenue_totale)
+
+      setFornitori(fornitoriStats)
+
+      // 2. Statistiche Generali
+      const totaleRevenue = fornitoriStats.reduce((sum, f) => sum + f.revenue_totale, 0)
+      const totaleIncassato = fornitoriStats.reduce((sum, f) => sum + f.incassato, 0)
+      const totalePrenotazioni = fornitoriStats.reduce((sum, f) => sum + f.num_prenotazioni, 0)
+      const totaleBarche = fornitoriStats.reduce((sum, f) => sum + f.num_barche, 0)
+
+      setStatisticheGenerali({
+        totale_revenue: totaleRevenue,
+        totale_incassato: totaleIncassato,
+        totale_da_incassare: totaleRevenue - totaleIncassato,
+        totale_prenotazioni: totalePrenotazioni,
+        totale_barche: totaleBarche,
+        ticket_medio: totalePrenotazioni > 0 ? totaleRevenue / totalePrenotazioni : 0,
+        tasso_incasso: totaleRevenue > 0 ? (totaleIncassato / totaleRevenue) * 100 : 0
       })
 
-      // Grafico ultimi 7 giorni
-      const ultimi7Giorni = eachDayOfInterval({
-        start: subDays(oggi, 6),
+      // 3. Top Servizi
+      const { data: serviziData } = await supabase
+        .from('servizi')
+        .select(`
+          id,
+          nome,
+          tipo,
+          prenotazioni!servizi_prenotazioni_servizio_id_fkey(
+            id,
+            prezzo_totale,
+            stato,
+            data_servizio
+          )
+        `)
+        .eq('attivo', true)
+
+      const serviziStats = (serviziData || []).map(servizio => {
+        const prenotazioniValide = (servizio.prenotazioni || []).filter((p: any) => 
+          p.stato !== 'cancellata' &&
+          new Date(p.data_servizio) >= dataInizio &&
+          new Date(p.data_servizio) <= oggi
+        )
+
+        return {
+          nome: servizio.nome,
+          tipo: servizio.tipo,
+          prenotazioni: prenotazioniValide.length,
+          revenue: prenotazioniValide.reduce((sum: number, p: any) => 
+            sum + (parseFloat(p.prezzo_totale) || 0), 0
+          )
+        }
+      })
+
+      serviziStats.sort((a, b) => b.revenue - a.revenue)
+      setTopServizi(serviziStats.slice(0, 5))
+
+      // 4. Trend Mensile
+      const mesi = eachMonthOfInterval({
+        start: dataInizio,
         end: oggi
       })
 
-      const grafico = ultimi7Giorni.map(giorno => {
-        const prenotazioniGiorno = prenotazioni.filter((p: any) => {
-          const dataServizio = new Date(p.data_servizio)
-          dataServizio.setHours(0, 0, 0, 0)
-          return dataServizio.getTime() === giorno.getTime()
-        })
+      const trendData = mesi.map(mese => {
+        const inizioMese = startOfMonth(mese)
+        const fineMese = endOfMonth(mese)
 
-        const acconto = prenotazioniGiorno.reduce((sum, p) => sum + Number(p.caparra_ricevuta || 0), 0)
-        const saldo = prenotazioniGiorno.reduce((sum, p) => sum + Number(p.saldo_ricevuto || 0), 0)
+        const revenueMese = fornitoriStats.reduce((sum, fornitore) => {
+          const prenotazioniMese = fornitore.imbarcazioni.flatMap((imb: any) => 
+            (imb.prenotazioni || []).filter((p: any) => {
+              const dataPrenotazione = new Date(p.data_servizio)
+              return p.stato !== 'cancellata' &&
+                dataPrenotazione >= inizioMese &&
+                dataPrenotazione <= fineMese
+            })
+          )
+          return sum + prenotazioniMese.reduce((s: number, p: any) => 
+            s + (parseFloat(p.prezzo_totale) || 0), 0
+          )
+        }, 0)
 
         return {
-          data: format(giorno, 'dd MMM', { locale: it }),
-          acconto,
-          saldo,
-          totale: acconto + saldo
+          mese: format(mese, 'MMM yyyy', { locale: it }),
+          revenue: revenueMese
         }
       })
 
-      setGraficoData(grafico)
+      setTrendMensile(trendData)
 
-      // Top 5 clienti
-      const clientiMap = new Map()
-      prenotazioni.forEach((p: any) => {
-        if (!p.cliente_id) return
-        const ricevuto = Number(p.caparra_ricevuta || 0) + Number(p.saldo_ricevuto || 0)
-        const existing = clientiMap.get(p.cliente_id) || {
-          nome: p.cliente_nome_completo,
-          email: p.cliente_email,
-          totale: 0,
-          prenotazioni: 0
-        }
-        existing.totale += ricevuto
-        existing.prenotazioni++
-        clientiMap.set(p.cliente_id, existing)
-      })
-
-      const topClienti = Array.from(clientiMap.values())
-        .sort((a, b) => b.totale - a.totale)
-        .slice(0, 5)
-
-      setTopClienti(topClienti)
-
-      // Statistiche imbarcazioni
-      const imbarcazioniMap = new Map()
-      prenotazioni.forEach((p: any) => {
-        if (!p.imbarcazione_id || p.stato === 'cancellata') return
-        const existing = imbarcazioniMap.get(p.imbarcazione_id) || {
-          nome: p.imbarcazione_nome,
-          prenotazioni: 0,
-          ricavi: 0
-        }
-        existing.prenotazioni++
-        existing.ricavi += Number(p.caparra_ricevuta || 0) + Number(p.saldo_ricevuto || 0)
-        imbarcazioniMap.set(p.imbarcazione_id, existing)
-      })
-
-      const imbarcazioni = Array.from(imbarcazioniMap.values())
-        .sort((a, b) => b.prenotazioni - a.prenotazioni)
-
-      setImbarcazioniStats(imbarcazioni)
-
-    } catch (error) {
-      console.error('Errore caricamento dati:', error)
+    } catch (error: any) {
+      console.error('Errore:', error)
+      toast.error('Errore nel caricamento statistiche')
     } finally {
       setLoading(false)
     }
   }
+
+  const fornitoriVisualizzati = selectedFornitore === 'tutti' 
+    ? fornitori 
+    : fornitori.filter(f => f.id === selectedFornitore)
 
   if (loading) {
     return (
@@ -178,181 +234,297 @@ export default function StatistichePage() {
     )
   }
 
-  const maxGrafico = Math.max(...graficoData.map(d => d.totale), 1)
-
   return (
-    <div className="p-4 md:p-8 space-y-6">
+    <div className="p-4 md:p-8">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Statistiche</h1>
-        <p className="text-gray-600 mt-1">Panoramica attività e statistiche</p>
+      <div className="mb-8">
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Statistiche</h1>
+        <p className="text-gray-600">Panoramica attività e performance fornitori</p>
       </div>
 
-      {/* Ricavi Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Ricavi Oggi</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                €{stats.ricaviOggi.toFixed(2)}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                {stats.prenotazioniOggi} prenotazion{stats.prenotazioniOggi !== 1 ? 'i' : 'e'}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">
-              💰
-            </div>
+      {/* Filtri */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Periodo Analisi</label>
+            <select
+              value={periodoAnalisi}
+              onChange={(e) => setPeriodoAnalisi(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            >
+              <option value="trimestre">Ultimi 3 Mesi</option>
+              <option value="semestre">Ultimi 6 Mesi</option>
+              <option value="anno">Ultimo Anno</option>
+            </select>
           </div>
-        </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Ricavi Settimana</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                €{stats.ricaviSettimana.toFixed(2)}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                {stats.prenotazioniSettimana} prenotazion{stats.prenotazioniSettimana !== 1 ? 'i' : 'e'}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">
-              📊
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Ricavi Mese</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                €{stats.ricaviMese.toFixed(2)}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                {stats.prenotazioniTotali} totali
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">
-              📈
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Fornitore</label>
+            <select
+              value={selectedFornitore}
+              onChange={(e) => setSelectedFornitore(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            >
+              <option value="tutti">Tutti i Fornitori</option>
+              {fornitori.map(f => (
+                <option key={f.id} value={f.id}>{f.nome}</option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
 
-      {/* Stati Prenotazioni */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Stato Prenotazioni</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="text-center p-4 bg-yellow-50 rounded-lg">
-            <p className="text-3xl font-bold text-yellow-600">{stats.inAttesa}</p>
-            <p className="text-sm text-gray-600 mt-1">In Attesa</p>
-          </div>
-          <div className="text-center p-4 bg-green-50 rounded-lg">
-            <p className="text-3xl font-bold text-green-600">{stats.confermate}</p>
-            <p className="text-sm text-gray-600 mt-1">Confermate</p>
-          </div>
-          <div className="text-center p-4 bg-blue-50 rounded-lg">
-            <p className="text-3xl font-bold text-blue-600">{stats.completate}</p>
-            <p className="text-sm text-gray-600 mt-1">Completate</p>
-          </div>
-          <div className="text-center p-4 bg-red-50 rounded-lg">
-            <p className="text-3xl font-bold text-red-600">{stats.cancellate}</p>
-            <p className="text-sm text-gray-600 mt-1">Cancellate</p>
+      {/* Statistiche Generali */}
+      {selectedFornitore === 'tutti' && statisticheGenerali && (
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Panoramica Generale</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white shadow-lg">
+              <div className="text-xs opacity-80 mb-1">Revenue Totale</div>
+              <div className="text-2xl font-bold">
+                €{statisticheGenerali.totale_revenue.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white shadow-lg">
+              <div className="text-xs opacity-80 mb-1">Incassato</div>
+              <div className="text-2xl font-bold">
+                €{statisticheGenerali.totale_incassato.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl p-4 text-white shadow-lg">
+              <div className="text-xs opacity-80 mb-1">Da Incassare</div>
+              <div className="text-2xl font-bold">
+                €{statisticheGenerali.totale_da_incassare.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-4 text-white shadow-lg">
+              <div className="text-xs opacity-80 mb-1">Prenotazioni</div>
+              <div className="text-2xl font-bold">
+                {statisticheGenerali.totale_prenotazioni}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl p-4 text-white shadow-lg">
+              <div className="text-xs opacity-80 mb-1">Ticket Medio</div>
+              <div className="text-2xl font-bold">
+                €{statisticheGenerali.ticket_medio.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl p-4 text-white shadow-lg">
+              <div className="text-xs opacity-80 mb-1">Imbarcazioni</div>
+              <div className="text-2xl font-bold">
+                {statisticheGenerali.totale_barche}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl p-4 text-white shadow-lg">
+              <div className="text-xs opacity-80 mb-1">Tasso Incasso</div>
+              <div className="text-2xl font-bold">
+                {statisticheGenerali.tasso_incasso.toFixed(0)}%
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Grafico Ricavi Ultimi 7 Giorni */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6">Ricavi Ultimi 7 Giorni</h2>
+      {/* Trend Mensile */}
+      {selectedFornitore === 'tutti' && trendMensile.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Trend Revenue Mensile</h2>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-end justify-between gap-2 h-64">
+              {trendMensile.map((mese, index) => {
+                const maxRevenue = Math.max(...trendMensile.map(m => m.revenue))
+                const altezza = maxRevenue > 0 ? (mese.revenue / maxRevenue) * 100 : 0
+                
+                return (
+                  <div key={index} className="flex-1 flex flex-col items-center gap-2">
+                    <div className="relative w-full">
+                      <div 
+                        className="bg-gradient-to-t from-blue-500 to-blue-400 rounded-t-lg hover:from-blue-600 hover:to-blue-500 transition-all cursor-pointer group"
+                        style={{ height: `${altezza}%`, minHeight: mese.revenue > 0 ? '20px' : '2px' }}
+                      >
+                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                          €{mese.revenue.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-600 text-center whitespace-nowrap transform -rotate-45 origin-top-left mt-4">
+                      {mese.mese}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Performance Fornitori */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          {selectedFornitore === 'tutti' ? 'Performance Fornitori' : 'Dettaglio Fornitore'}
+        </h2>
         <div className="space-y-4">
-          {graficoData.map((giorno, index) => (
-            <div key={index} className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-gray-700">{giorno.data}</span>
-                <span className="font-semibold text-gray-900">€{giorno.totale.toFixed(2)}</span>
+          {fornitoriVisualizzati.map((fornitore, index) => (
+            <div key={fornitore.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              {/* Header Fornitore */}
+              <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6 text-white">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl font-bold">#{index + 1}</span>
+                      <div>
+                        <h3 className="text-2xl font-bold">{fornitore.nome}</h3>
+                        <p className="text-sm opacity-90">
+                          {fornitore.num_barche} imbarcazioni • {fornitore.num_prenotazioni} prenotazioni
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-4xl font-bold">
+                      €{fornitore.revenue_totale.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                    </div>
+                    <div className="text-sm opacity-90">Revenue Totale</div>
+                  </div>
+                </div>
+
+                {/* Stats Row */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-white bg-opacity-20 rounded-lg p-3">
+                    <div className="text-xs opacity-80">Incassato</div>
+                    <div className="text-xl font-bold">
+                      €{fornitore.incassato.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                    </div>
+                  </div>
+                  <div className="bg-white bg-opacity-20 rounded-lg p-3">
+                    <div className="text-xs opacity-80">Da Incassare</div>
+                    <div className="text-xl font-bold">
+                      €{fornitore.da_incassare.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                    </div>
+                  </div>
+                  <div className="bg-white bg-opacity-20 rounded-lg p-3">
+                    <div className="text-xs opacity-80">Ticket Medio</div>
+                    <div className="text-xl font-bold">
+                      €{fornitore.ticket_medio.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="flex gap-1 h-8">
-                {/* Acconto */}
-                <div
-                  className="bg-blue-500 rounded transition-all"
-                  style={{ width: `${(giorno.acconto / maxGrafico) * 100}%` }}
-                  title={`Acconto: €${giorno.acconto.toFixed(2)}`}
-                />
-                {/* Saldo */}
-                <div
-                  className="bg-green-500 rounded transition-all"
-                  style={{ width: `${(giorno.saldo / maxGrafico) * 100}%` }}
-                  title={`Saldo: €${giorno.saldo.toFixed(2)}`}
-                />
+
+              {/* Stats per Categoria */}
+              <div className="p-6 border-b">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Performance per Categoria</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  {fornitore.categorie.map((cat: any) => {
+                    const colore = cat.categoria === 'simple' ? 'green' 
+                      : cat.categoria === 'premium' ? 'yellow' 
+                      : 'purple'
+                    
+                    return (
+                      <div key={cat.categoria} className={`bg-${colore}-50 border border-${colore}-200 rounded-lg p-4`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`w-3 h-3 rounded-full bg-${colore}-500`}></span>
+                          <span className="text-sm font-semibold text-gray-900 capitalize">{cat.categoria}</span>
+                        </div>
+                        <div className="text-2xl font-bold text-gray-900 mb-1">
+                          €{cat.revenue.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          {cat.prenotazioni} prenotazioni • {cat.barche} barche
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
-              <div className="flex gap-4 text-xs text-gray-500">
-                <span className="flex items-center gap-1">
-                  <span className="w-3 h-3 bg-blue-500 rounded"></span>
-                  Acconto: €{giorno.acconto.toFixed(2)}
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-3 h-3 bg-green-500 rounded"></span>
-                  Saldo: €{giorno.saldo.toFixed(2)}
-                </span>
+
+              {/* Top Imbarcazioni */}
+              <div className="p-6">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Top Imbarcazioni</h4>
+                <div className="space-y-2">
+                  {fornitore.imbarcazioni
+                    .map((imb: any) => {
+                      const prenotazioni = (imb.prenotazioni || []).filter((p: any) => p.stato !== 'cancellata')
+                      const revenue = prenotazioni.reduce((sum: number, p: any) => 
+                        sum + (parseFloat(p.prezzo_totale) || 0), 0
+                      )
+                      return { ...imb, prenotazioni_count: prenotazioni.length, revenue }
+                    })
+                    .sort((a: any, b: any) => b.revenue - a.revenue)
+                    .slice(0, 5)
+                    .map((imb: any) => (
+                      <div key={imb.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">
+                            {imb.prenotazioni_count}
+                          </div>
+                          <div>
+                            <div className="font-medium text-gray-900">{imb.nome}</div>
+                            <div className="text-sm text-gray-500 capitalize">{imb.tipo} • {imb.categoria}</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-gray-900">
+                            €{imb.revenue.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {imb.prenotazioni_count} prenotazioni
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Clienti */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Top 5 Clienti</h2>
-          {topClienti.length === 0 ? (
-            <p className="text-gray-500 text-sm">Nessun cliente trovato</p>
-          ) : (
+      {/* Top 5 Servizi */}
+      {selectedFornitore === 'tutti' && topServizi.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Top 5 Servizi</h2>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="space-y-3">
-              {topClienti.map((cliente, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold text-sm">
-                      {index + 1}
+              {topServizi.map((servizio, index) => (
+                <div key={index} className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                    {index + 1}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-900">{servizio.nome}</div>
+                    <div className="text-sm text-gray-500 capitalize">{servizio.tipo}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xl font-bold text-gray-900">
+                      €{servizio.revenue.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
                     </div>
-                    <div>
-                      <p className="font-medium text-gray-900">{cliente.nome}</p>
-                      <p className="text-xs text-gray-500">{cliente.prenotazioni} prenotazion{cliente.prenotazioni !== 1 ? 'i' : 'e'}</p>
+                    <div className="text-sm text-gray-500">
+                      {servizio.prenotazioni} prenotazioni
                     </div>
                   </div>
-                  <p className="font-semibold text-gray-900">€{cliente.totale.toFixed(2)}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Imbarcazioni Performance */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Performance Imbarcazioni</h2>
-          {imbarcazioniStats.length === 0 ? (
-            <p className="text-gray-500 text-sm">Nessuna imbarcazione trovata</p>
-          ) : (
-            <div className="space-y-3">
-              {imbarcazioniStats.map((imb, index) => (
-                <div key={index} className="p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="font-medium text-gray-900">🚤 {imb.nome}</p>
-                    <p className="font-semibold text-gray-900">€{imb.ricavi.toFixed(2)}</p>
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span>{imb.prenotazioni} prenotazion{imb.prenotazioni !== 1 ? 'i' : 'e'}</span>
-                    <span>€{(imb.ricavi / imb.prenotazioni).toFixed(2)} media</span>
+                  <div className="w-32">
+                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-purple-500 to-purple-600"
+                        style={{ 
+                          width: `${(servizio.revenue / topServizi[0].revenue) * 100}%` 
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
