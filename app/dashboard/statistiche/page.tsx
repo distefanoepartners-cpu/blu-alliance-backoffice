@@ -14,6 +14,17 @@ export default function StatistichePage() {
   const [trendMensile, setTrendMensile] = useState<any[]>([])
   const [selectedFornitore, setSelectedFornitore] = useState<string>('tutti')
   const [periodoAnalisi, setPeriodoAnalisi] = useState<string>('anno') // anno, semestre, trimestre
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    // Detect mobile
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   useEffect(() => {
     loadData()
@@ -278,52 +289,52 @@ export default function StatistichePage() {
       {selectedFornitore === 'tutti' && statisticheGenerali && (
         <div className="mb-8">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Panoramica Generale</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white shadow-lg">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 md:gap-4">
+            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-3 md:p-4 text-white shadow-lg">
               <div className="text-xs opacity-80 mb-1">Revenue Totale</div>
-              <div className="text-2xl font-bold">
-                €{statisticheGenerali.totale_revenue.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+              <div className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>
+                €{(statisticheGenerali.totale_revenue / 1000).toFixed(0)}k
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white shadow-lg">
+            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-3 md:p-4 text-white shadow-lg">
               <div className="text-xs opacity-80 mb-1">Incassato</div>
-              <div className="text-2xl font-bold">
-                €{statisticheGenerali.totale_incassato.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+              <div className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>
+                €{(statisticheGenerali.totale_incassato / 1000).toFixed(0)}k
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl p-4 text-white shadow-lg">
+            <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl p-3 md:p-4 text-white shadow-lg">
               <div className="text-xs opacity-80 mb-1">Da Incassare</div>
-              <div className="text-2xl font-bold">
-                €{statisticheGenerali.totale_da_incassare.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+              <div className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>
+                €{(statisticheGenerali.totale_da_incassare / 1000).toFixed(0)}k
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-4 text-white shadow-lg">
+            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-3 md:p-4 text-white shadow-lg">
               <div className="text-xs opacity-80 mb-1">Prenotazioni</div>
-              <div className="text-2xl font-bold">
+              <div className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>
                 {statisticheGenerali.totale_prenotazioni}
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl p-4 text-white shadow-lg">
+            <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl p-3 md:p-4 text-white shadow-lg">
               <div className="text-xs opacity-80 mb-1">Ticket Medio</div>
-              <div className="text-2xl font-bold">
+              <div className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>
                 €{statisticheGenerali.ticket_medio.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl p-4 text-white shadow-lg">
+            <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl p-3 md:p-4 text-white shadow-lg">
               <div className="text-xs opacity-80 mb-1">Imbarcazioni</div>
-              <div className="text-2xl font-bold">
+              <div className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>
                 {statisticheGenerali.totale_barche}
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl p-4 text-white shadow-lg">
+            <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl p-3 md:p-4 text-white shadow-lg">
               <div className="text-xs opacity-80 mb-1">Tasso Incasso</div>
-              <div className="text-2xl font-bold">
+              <div className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>
                 {statisticheGenerali.tasso_incasso.toFixed(0)}%
               </div>
             </div>
@@ -373,44 +384,44 @@ export default function StatistichePage() {
           {fornitoriVisualizzati.map((fornitore, index) => (
             <div key={fornitore.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               {/* Header Fornitore */}
-              <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6 text-white">
-                <div className="flex items-center justify-between mb-4">
+              <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4 md:p-6 text-white">
+                <div className="flex items-center justify-between mb-3 md:mb-4">
                   <div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-3xl font-bold">#{index + 1}</span>
+                    <div className="flex items-center gap-2 md:gap-3">
+                      <span className={`font-bold ${isMobile ? 'text-xl' : 'text-3xl'}`}>#{index + 1}</span>
                       <div>
-                        <h3 className="text-2xl font-bold">{fornitore.nome}</h3>
-                        <p className="text-sm opacity-90">
+                        <h3 className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>{fornitore.nome}</h3>
+                        <p className="text-xs md:text-sm opacity-90">
                           {fornitore.num_barche} imbarcazioni • {fornitore.num_prenotazioni} prenotazioni
                         </p>
                       </div>
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-4xl font-bold">
-                      €{fornitore.revenue_totale.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                    <div className={`font-bold ${isMobile ? 'text-2xl' : 'text-4xl'}`}>
+                      €{(fornitore.revenue_totale / 1000).toFixed(0)}k
                     </div>
-                    <div className="text-sm opacity-90">Revenue Totale</div>
+                    <div className="text-xs md:text-sm opacity-90">Revenue Totale</div>
                   </div>
                 </div>
 
                 {/* Stats Row */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-white bg-opacity-20 rounded-lg p-3">
+                <div className="grid grid-cols-3 gap-2 md:gap-4">
+                  <div className="bg-white bg-opacity-20 rounded-lg p-2 md:p-3">
                     <div className="text-xs opacity-80">Incassato</div>
-                    <div className="text-xl font-bold">
-                      €{fornitore.incassato.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                    <div className={`font-bold ${isMobile ? 'text-base' : 'text-xl'}`}>
+                      €{(fornitore.incassato / 1000).toFixed(0)}k
                     </div>
                   </div>
-                  <div className="bg-white bg-opacity-20 rounded-lg p-3">
+                  <div className="bg-white bg-opacity-20 rounded-lg p-2 md:p-3">
                     <div className="text-xs opacity-80">Da Incassare</div>
-                    <div className="text-xl font-bold">
-                      €{fornitore.da_incassare.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                    <div className={`font-bold ${isMobile ? 'text-base' : 'text-xl'}`}>
+                      €{(fornitore.da_incassare / 1000).toFixed(0)}k
                     </div>
                   </div>
-                  <div className="bg-white bg-opacity-20 rounded-lg p-3">
+                  <div className="bg-white bg-opacity-20 rounded-lg p-2 md:p-3">
                     <div className="text-xs opacity-80">Ticket Medio</div>
-                    <div className="text-xl font-bold">
+                    <div className={`font-bold ${isMobile ? 'text-base' : 'text-xl'}`}>
                       €{fornitore.ticket_medio.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
                     </div>
                   </div>
@@ -418,25 +429,25 @@ export default function StatistichePage() {
               </div>
 
               {/* Stats per Categoria */}
-              <div className="p-6 border-b">
+              <div className="p-4 md:p-6 border-b">
                 <h4 className="text-sm font-semibold text-gray-700 mb-3">Performance per Categoria</h4>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-3 gap-2 md:gap-4">
                   {fornitore.categorie.map((cat: any) => {
                     const colore = cat.categoria === 'simple' ? 'green' 
                       : cat.categoria === 'premium' ? 'yellow' 
                       : 'purple'
                     
                     return (
-                      <div key={cat.categoria} className={`bg-${colore}-50 border border-${colore}-200 rounded-lg p-4`}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className={`w-3 h-3 rounded-full bg-${colore}-500`}></span>
-                          <span className="text-sm font-semibold text-gray-900 capitalize">{cat.categoria}</span>
+                      <div key={cat.categoria} className={`bg-${colore}-50 border border-${colore}-200 rounded-lg p-2 md:p-4`}>
+                        <div className="flex items-center gap-1 md:gap-2 mb-1 md:mb-2">
+                          <span className={`w-2 h-2 md:w-3 md:h-3 rounded-full bg-${colore}-500`}></span>
+                          <span className="text-xs md:text-sm font-semibold text-gray-900 capitalize">{cat.categoria}</span>
                         </div>
-                        <div className="text-2xl font-bold text-gray-900 mb-1">
-                          €{cat.revenue.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                        <div className={`font-bold text-gray-900 ${isMobile ? 'text-lg' : 'text-2xl'} mb-1`}>
+                          €{(cat.revenue / 1000).toFixed(0)}k
                         </div>
                         <div className="text-xs text-gray-600">
-                          {cat.prenotazioni} prenotazioni • {cat.barche} barche
+                          {cat.prenotazioni} pren. • {cat.barche} barche
                         </div>
                       </div>
                     )
@@ -444,8 +455,8 @@ export default function StatistichePage() {
                 </div>
               </div>
 
-              {/* Top Imbarcazioni */}
-              <div className="p-6">
+              {/* Top Imbarcazioni - Mostra solo top 3 su mobile */}
+              <div className="p-4 md:p-6">
                 <h4 className="text-sm font-semibold text-gray-700 mb-3">Top Imbarcazioni</h4>
                 <div className="space-y-2">
                   {fornitore.imbarcazioni
@@ -457,24 +468,24 @@ export default function StatistichePage() {
                       return { ...imb, prenotazioni_count: prenotazioni.length, revenue }
                     })
                     .sort((a: any, b: any) => b.revenue - a.revenue)
-                    .slice(0, 5)
+                    .slice(0, isMobile ? 3 : 5)
                     .map((imb: any) => (
-                      <div key={imb.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">
+                      <div key={imb.id} className="flex items-center justify-between p-2 md:p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
+                          <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold flex-shrink-0`}>
                             {imb.prenotazioni_count}
                           </div>
-                          <div>
-                            <div className="font-medium text-gray-900">{imb.nome}</div>
-                            <div className="text-sm text-gray-500 capitalize">{imb.tipo} • {imb.categoria}</div>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-gray-900 text-sm md:text-base truncate">{imb.nome}</div>
+                            <div className="text-xs md:text-sm text-gray-500 capitalize">{imb.tipo} • {imb.categoria}</div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="font-bold text-gray-900">
-                            €{imb.revenue.toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                        <div className="text-right ml-2 flex-shrink-0">
+                          <div className="font-bold text-gray-900 text-sm md:text-base">
+                            €{(imb.revenue / 1000).toFixed(1)}k
                           </div>
                           <div className="text-xs text-gray-500">
-                            {imb.prenotazioni_count} prenotazioni
+                            {imb.prenotazioni_count} pren.
                           </div>
                         </div>
                       </div>
