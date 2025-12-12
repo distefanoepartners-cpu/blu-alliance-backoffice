@@ -13,6 +13,8 @@ export default function PrenotazioniPage() {
   const [filtroStato, setFiltroStato] = useState<string>('tutte')
   const [filtroPagamento, setFiltroPagamento] = useState<string>('tutti')
   const [searchTerm, setSearchTerm] = useState('')
+  const [showModal, setShowModal] = useState(false)
+  const [editingPrenotazione, setEditingPrenotazione] = useState<any>(null)
 
   useEffect(() => {
     loadData()
@@ -86,6 +88,40 @@ export default function PrenotazioniPage() {
     
     return true
   })
+
+  function handleEdit(prenotazione: any) {
+    setEditingPrenotazione(prenotazione)
+    setShowModal(true)
+  }
+
+  async function handleSavePrenotazione() {
+    if (!editingPrenotazione) return
+
+    try {
+      const { error } = await supabase
+        .from('prenotazioni')
+        .update({
+          data_servizio: editingPrenotazione.data_servizio,
+          ora_inizio: editingPrenotazione.ora_inizio,
+          numero_persone: editingPrenotazione.numero_persone,
+          stato: editingPrenotazione.stato,
+          caparra_ricevuta: editingPrenotazione.caparra_ricevuta,
+          saldo_ricevuto: editingPrenotazione.saldo_ricevuto,
+          note_interne: editingPrenotazione.note_interne,
+          note_cliente: editingPrenotazione.note_cliente
+        })
+        .eq('id', editingPrenotazione.id)
+
+      if (error) throw error
+
+      toast.success('Prenotazione aggiornata!')
+      setShowModal(false)
+      loadData()
+    } catch (error: any) {
+      console.error('Errore salvataggio:', error)
+      toast.error('Errore nel salvataggio')
+    }
+  }
 
   const getStatoColor = (stato: string) => {
     switch (stato) {
@@ -394,7 +430,11 @@ export default function PrenotazioniPage() {
                   {/* Azioni */}
                   <td className="px-4 py-4">
                     <div className="flex gap-2">
-                      <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="Modifica">
+                      <button 
+                        onClick={() => handleEdit(prenotazione)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" 
+                        title="Modifica"
+                      >
                         ✏️
                       </button>
                       <button className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg" title="Dettagli">
@@ -426,6 +466,244 @@ export default function PrenotazioniPage() {
       <div className="mt-6 text-sm text-gray-500 text-center">
         Visualizzate {prenotazioniFiltrate.length} di {prenotazioni.length} prenotazioni
       </div>
+
+      {/* Modal Modifica Prenotazione */}
+      {showModal && editingPrenotazione && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-3xl w-full my-8">
+            <div className="p-6 border-b flex items-center justify-between sticky top-0 bg-white z-10">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Modifica Prenotazione</h2>
+                <p className="text-sm text-gray-600 mt-1">{editingPrenotazione.codice_prenotazione}</p>
+              </div>
+              <button 
+                onClick={() => setShowModal(false)} 
+                className="text-gray-400 hover:text-gray-600 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Info Cliente (Read-only) */}
+              <div className="bg-blue-50 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-2">Cliente</h3>
+                <p className="text-sm text-gray-700">
+                  <strong>{editingPrenotazione.clienti?.nome} {editingPrenotazione.clienti?.cognome}</strong>
+                </p>
+                <p className="text-sm text-gray-600">{editingPrenotazione.clienti?.email}</p>
+                <p className="text-sm text-gray-600">{editingPrenotazione.clienti?.telefono}</p>
+              </div>
+
+              {/* Info Servizio (Read-only) */}
+              <div className="bg-purple-50 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-2">Servizio e Imbarcazione</h3>
+                <p className="text-sm text-gray-700">
+                  <strong>{editingPrenotazione.servizi?.nome}</strong>
+                </p>
+                <p className="text-sm text-gray-600">
+                  {editingPrenotazione.imbarcazioni?.nome} • {editingPrenotazione.imbarcazioni?.categoria}
+                </p>
+              </div>
+
+              {/* Campi Modificabili */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Data Servizio */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Data Servizio</label>
+                  <input
+                    type="date"
+                    value={editingPrenotazione.data_servizio}
+                    onChange={(e) => setEditingPrenotazione({
+                      ...editingPrenotazione,
+                      data_servizio: e.target.value
+                    })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+
+                {/* Ora Inizio */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Ora Inizio</label>
+                  <input
+                    type="time"
+                    value={editingPrenotazione.ora_inizio || ''}
+                    onChange={(e) => setEditingPrenotazione({
+                      ...editingPrenotazione,
+                      ora_inizio: e.target.value
+                    })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+
+                {/* Numero Persone */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Numero Persone</label>
+                  <input
+                    type="number"
+                    value={editingPrenotazione.numero_persone || ''}
+                    onChange={(e) => setEditingPrenotazione({
+                      ...editingPrenotazione,
+                      numero_persone: parseInt(e.target.value)
+                    })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    min="1"
+                  />
+                </div>
+
+                {/* Stato */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Stato Prenotazione</label>
+                  <select
+                    value={editingPrenotazione.stato}
+                    onChange={(e) => setEditingPrenotazione({
+                      ...editingPrenotazione,
+                      stato: e.target.value
+                    })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="in_attesa">In Attesa</option>
+                    <option value="confermata">Confermata</option>
+                    <option value="completata">Completata</option>
+                    <option value="cancellata">Cancellata</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Sezione Pagamenti */}
+              <div className="bg-green-50 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-4">Pagamenti</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  {/* Prezzo Totale (Read-only) */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Prezzo Totale</label>
+                    <div className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 font-bold">
+                      €{editingPrenotazione.prezzo_totale?.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+
+                  {/* Caparra Dovuta (Read-only) */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Caparra Dovuta (30%)</label>
+                    <div className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-700">
+                      €{editingPrenotazione.caparra_dovuta?.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+
+                  {/* Saldo Dovuto (Calcolato) */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Saldo Dovuto</label>
+                    <div className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-700">
+                      €{(
+                        (editingPrenotazione.prezzo_totale || 0) - 
+                        (editingPrenotazione.caparra_ricevuta || 0)
+                      ).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Caparra Ricevuta */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Caparra Ricevuta</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">€</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editingPrenotazione.caparra_ricevuta || 0}
+                        onChange={(e) => setEditingPrenotazione({
+                          ...editingPrenotazione,
+                          caparra_ricevuta: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Saldo Ricevuto */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Saldo Ricevuto</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">€</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editingPrenotazione.saldo_ricevuto || 0}
+                        onChange={(e) => setEditingPrenotazione({
+                          ...editingPrenotazione,
+                          saldo_ricevuto: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Da Ricevere (Calcolato) */}
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-700">Totale Da Ricevere:</span>
+                    <span className="text-xl font-bold text-red-600">
+                      €{(
+                        (editingPrenotazione.prezzo_totale || 0) - 
+                        (editingPrenotazione.caparra_ricevuta || 0) - 
+                        (editingPrenotazione.saldo_ricevuto || 0)
+                      ).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Note */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Note Cliente</label>
+                <textarea
+                  value={editingPrenotazione.note_cliente || ''}
+                  onChange={(e) => setEditingPrenotazione({
+                    ...editingPrenotazione,
+                    note_cliente: e.target.value
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  rows={2}
+                  placeholder="Note visibili al cliente..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Note Interne</label>
+                <textarea
+                  value={editingPrenotazione.note_interne || ''}
+                  onChange={(e) => setEditingPrenotazione({
+                    ...editingPrenotazione,
+                    note_interne: e.target.value
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  rows={2}
+                  placeholder="Note interne (non visibili al cliente)..."
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="p-6 border-t bg-gray-50 flex gap-3">
+              <button
+                onClick={() => setShowModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-white"
+              >
+                Annulla
+              </button>
+              <button
+                onClick={handleSavePrenotazione}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Salva Modifiche
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
