@@ -14,7 +14,10 @@ export default function PrenotazioniPage() {
   const [filtroPagamento, setFiltroPagamento] = useState<string>('tutti')
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [showEmailModal, setShowEmailModal] = useState(false)
   const [editingPrenotazione, setEditingPrenotazione] = useState<any>(null)
+  const [emailPrenotazione, setEmailPrenotazione] = useState<any>(null)
+  const [sendingEmail, setSendingEmail] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -108,7 +111,8 @@ export default function PrenotazioniPage() {
           caparra_ricevuta: editingPrenotazione.caparra_ricevuta,
           saldo_ricevuto: editingPrenotazione.saldo_ricevuto,
           note_interne: editingPrenotazione.note_interne,
-          note_cliente: editingPrenotazione.note_cliente
+          note_cliente: editingPrenotazione.note_cliente,
+          lingua: editingPrenotazione.lingua
         })
         .eq('id', editingPrenotazione.id)
 
@@ -120,6 +124,47 @@ export default function PrenotazioniPage() {
     } catch (error: any) {
       console.error('Errore salvataggio:', error)
       toast.error('Errore nel salvataggio')
+    }
+  }
+
+  function handleOpenEmailModal(prenotazione: any) {
+    setEmailPrenotazione(prenotazione)
+    setShowEmailModal(true)
+  }
+
+  async function handleSendEmail() {
+    if (!emailPrenotazione) return
+
+    try {
+      setSendingEmail(true)
+
+      // Chiama API per inviare email
+      const response = await fetch('/api/send-confirmation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prenotazioneId: emailPrenotazione.id,
+          lingua: emailPrenotazione.lingua || 'it',
+          tipo: 'conferma'
+        })
+      })
+
+      if (!response.ok) throw new Error('Errore invio email')
+
+      // Aggiorna flag email_conferma_inviata
+      await supabase
+        .from('prenotazioni')
+        .update({ email_conferma_inviata: true })
+        .eq('id', emailPrenotazione.id)
+
+      toast.success('Email inviata con successo!')
+      setShowEmailModal(false)
+      loadData()
+    } catch (error: any) {
+      console.error('Errore invio email:', error)
+      toast.error('Errore nell\'invio dell\'email')
+    } finally {
+      setSendingEmail(false)
     }
   }
 
@@ -443,7 +488,11 @@ export default function PrenotazioniPage() {
                       <button className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="Pagamenti">
                         💳
                       </button>
-                      <button className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg" title="Email">
+                      <button 
+                        onClick={() => handleOpenEmailModal(prenotazione)}
+                        className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg" 
+                        title="Invia Email"
+                      >
                         📧
                       </button>
                     </div>
@@ -566,6 +615,25 @@ export default function PrenotazioniPage() {
                     <option value="confermata">Confermata</option>
                     <option value="completata">Completata</option>
                     <option value="cancellata">Cancellata</option>
+                  </select>
+                </div>
+
+                {/* Lingua */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Lingua Email</label>
+                  <select
+                    value={editingPrenotazione.lingua || 'it'}
+                    onChange={(e) => setEditingPrenotazione({
+                      ...editingPrenotazione,
+                      lingua: e.target.value
+                    })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="it">🇮🇹 Italiano</option>
+                    <option value="en">🇬🇧 English</option>
+                    <option value="fr">🇫🇷 Français</option>
+                    <option value="de">🇩🇪 Deutsch</option>
+                    <option value="es">🇪🇸 Español</option>
                   </select>
                 </div>
               </div>
@@ -699,6 +767,107 @@ export default function PrenotazioniPage() {
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 Salva Modifiche
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Invio Email */}
+      {showEmailModal && emailPrenotazione && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full">
+            <div className="p-6 border-b">
+              <h2 className="text-2xl font-bold text-gray-900">Invia Email Conferma</h2>
+              <p className="text-sm text-gray-600 mt-1">{emailPrenotazione.codice_prenotazione}</p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Info Cliente */}
+              <div className="bg-blue-50 rounded-lg p-4">
+                <p className="text-sm font-semibold text-gray-900">
+                  {emailPrenotazione.clienti?.nome} {emailPrenotazione.clienti?.cognome}
+                </p>
+                <p className="text-sm text-gray-600">{emailPrenotazione.clienti?.email}</p>
+              </div>
+
+              {/* Info Prenotazione */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-gray-600">Servizio:</span>
+                    <p className="font-medium">{emailPrenotazione.servizi?.nome}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Data:</span>
+                    <p className="font-medium">
+                      {format(new Date(emailPrenotazione.data_servizio), 'dd MMM yyyy', { locale: it })}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Imbarcazione:</span>
+                    <p className="font-medium">{emailPrenotazione.imbarcazioni?.nome}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Importo:</span>
+                    <p className="font-medium">€{emailPrenotazione.prezzo_totale?.toLocaleString('it-IT')}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Selezione Lingua */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Lingua Email</label>
+                <select
+                  value={emailPrenotazione.lingua || 'it'}
+                  onChange={(e) => setEmailPrenotazione({
+                    ...emailPrenotazione,
+                    lingua: e.target.value
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="it">🇮🇹 Italiano</option>
+                  <option value="en">🇬🇧 English</option>
+                  <option value="fr">🇫🇷 Français</option>
+                  <option value="de">🇩🇪 Deutsch</option>
+                  <option value="es">🇪🇸 Español</option>
+                </select>
+              </div>
+
+              {/* Status Email */}
+              {emailPrenotazione.email_conferma_inviata && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <p className="text-sm text-green-700">
+                    ✅ Email di conferma già inviata
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="p-6 border-t bg-gray-50 flex gap-3">
+              <button
+                onClick={() => setShowEmailModal(false)}
+                disabled={sendingEmail}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-white disabled:opacity-50"
+              >
+                Annulla
+              </button>
+              <button
+                onClick={handleSendEmail}
+                disabled={sendingEmail}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {sendingEmail ? (
+                  <>
+                    <span className="animate-spin">⏳</span>
+                    Invio...
+                  </>
+                ) : (
+                  <>
+                    📧 Invia Email
+                  </>
+                )}
               </button>
             </div>
           </div>

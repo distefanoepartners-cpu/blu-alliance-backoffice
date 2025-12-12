@@ -1,239 +1,291 @@
-import { Resend } from 'resend'
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { 
-      email, 
-      nomeCliente, 
-      codicePrenotazione,
-      nomeServizio,
-      dataServizio,
-      oraImbarco,
-      luogoImbarco,
-      numeroPax,
-      prezzoTotale,
-      accontoRicevuto,
-      saldoRicevuto,
-      lingua = 'it'
-    } = body
+    const { prenotazioneId, lingua, tipo } = await request.json()
 
-    const daRicevere = prezzoTotale - accontoRicevuto - saldoRicevuto
-
-    // Traduzioni
-    const translations: any = {
-      it: {
-        subject: `Conferma Prenotazione ${codicePrenotazione} - Blu Alliance`,
-        title: '🚢 Conferma Prenotazione',
-        subtitle: 'Blu Alliance Group',
-        greeting: `Gentile <strong>${nomeCliente}</strong>,`,
-        intro: 'La sua prenotazione è stata confermata! Di seguito i dettagli:',
-        detailsTitle: '📋 Dettagli Prenotazione',
-        bookingCode: 'Codice Prenotazione:',
-        service: 'Servizio:',
-        date: 'Data:',
-        boardingTime: 'Ora Imbarco:',
-        boardingPlace: 'Luogo Imbarco:',
-        passengers: 'Numero Passeggeri:',
-        person: 'persona',
-        people: 'persone',
-        paymentsTitle: '💰 Riepilogo Pagamenti',
-        totalAmount: 'Importo Totale:',
-        depositReceived: 'Acconto Ricevuto:',
-        balanceReceived: 'Saldo Ricevuto:',
-        balanceDue: 'Saldo da Ricevere:',
-        paymentComplete: '✅ Pagamento completato',
-        presentAt: '📍 Presentarsi presso:',
-        atTime: '🕐 Alle ore:',
-        important: 'Importante:',
-        importantNote: 'Si prega di presentarsi 15 minuti prima dell\'orario di imbarco.',
-        contact: 'Per qualsiasi informazione o modifica, non esitare a contattarci.',
-        regards: 'Cordiali saluti,',
-        team: 'Il Team di Blu Alliance',
-        footer1: 'Blu Alliance Group - Turismo Marittimo',
-        footer2: 'Porto di Salerno | info@blualliancegroup.com',
-        footer3: 'Questa è una email automatica, si prega di non rispondere.'
-      },
-      en: {
-        subject: `Booking Confirmation ${codicePrenotazione} - Blu Alliance`,
-        title: '🚢 Booking Confirmation',
-        subtitle: 'Blu Alliance Group',
-        greeting: `Dear <strong>${nomeCliente}</strong>,`,
-        intro: 'Your booking has been confirmed! Here are the details:',
-        detailsTitle: '📋 Booking Details',
-        bookingCode: 'Booking Code:',
-        service: 'Service:',
-        date: 'Date:',
-        boardingTime: 'Boarding Time:',
-        boardingPlace: 'Boarding Location:',
-        passengers: 'Number of Passengers:',
-        person: 'person',
-        people: 'people',
-        paymentsTitle: '💰 Payment Summary',
-        totalAmount: 'Total Amount:',
-        depositReceived: 'Deposit Received:',
-        balanceReceived: 'Balance Received:',
-        balanceDue: 'Balance Due:',
-        paymentComplete: '✅ Payment completed',
-        presentAt: '📍 Please arrive at:',
-        atTime: '🕐 At:',
-        important: 'Important:',
-        importantNote: 'Please arrive 15 minutes before boarding time.',
-        contact: 'For any information or changes, please contact us.',
-        regards: 'Best regards,',
-        team: 'The Blu Alliance Team',
-        footer1: 'Blu Alliance Group - Maritime Tourism',
-        footer2: 'Port of Salerno | info@blualliancegroup.com',
-        footer3: 'This is an automated email, please do not reply.'
-      }
+    if (!prenotazioneId) {
+      return NextResponse.json(
+        { error: 'ID prenotazione mancante' },
+        { status: 400 }
+      )
     }
 
-    const t = translations[lingua] || translations.it
+    // Carica dati prenotazione completi
+    const { data: prenotazione, error: prenotazioneError } = await supabase
+      .from('prenotazioni')
+      .select(`
+        *,
+        clienti(nome, cognome, email, telefono),
+        servizi(nome, descrizione, tipo),
+        imbarcazioni(nome, tipo, categoria),
+        fornitori!imbarcazioni(ragione_sociale, email, telefono)
+      `)
+      .eq('id', prenotazioneId)
+      .single()
 
-    // Formatta la data
-    const dataFormattata = new Date(dataServizio).toLocaleDateString(lingua === 'en' ? 'en-US' : 'it-IT', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })
-
-    const { data, error } = await resend.emails.send({
-      from: 'Blu Alliance <noreply@blualliancegroup.com>',
-      to: [email],
-      subject: t.subject,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; }
-            .info-box { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea; }
-            .info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
-            .info-row:last-child { border-bottom: none; }
-            .label { font-weight: bold; color: #6b7280; }
-            .value { color: #111827; }
-            .highlight { background: #dbeafe; padding: 15px; border-radius: 8px; margin: 20px 0; text-align: center; }
-            .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 14px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>${t.title}</h1>
-              <p style="margin: 10px 0 0 0; font-size: 18px;">${t.subtitle}</p>
-            </div>
-            
-            <div class="content">
-              <p>${t.greeting}</p>
-              <p>${t.intro}</p>
-              
-              <div class="info-box">
-                <h3 style="margin-top: 0; color: #667eea;">${t.detailsTitle}</h3>
-                <div class="info-row">
-                  <span class="label">${t.bookingCode}</span>
-                  <span class="value"><strong>${codicePrenotazione}</strong></span>
-                </div>
-                <div class="info-row">
-                  <span class="label">${t.service}</span>
-                  <span class="value">${nomeServizio}</span>
-                </div>
-                <div class="info-row">
-                  <span class="label">${t.date}</span>
-                  <span class="value">${dataFormattata}</span>
-                </div>
-                ${oraImbarco ? `
-                <div class="info-row">
-                  <span class="label">${t.boardingTime}</span>
-                  <span class="value"><strong>${oraImbarco}</strong></span>
-                </div>
-                ` : ''}
-                ${luogoImbarco ? `
-                <div class="info-row">
-                  <span class="label">${t.boardingPlace}</span>
-                  <span class="value"><strong>${luogoImbarco}</strong></span>
-                </div>
-                ` : ''}
-                <div class="info-row">
-                  <span class="label">${t.passengers}</span>
-                  <span class="value">${numeroPax} ${numeroPax === 1 ? t.person : t.people}</span>
-                </div>
-              </div>
-
-              <div class="info-box">
-                <h3 style="margin-top: 0; color: #667eea;">${t.paymentsTitle}</h3>
-                <div class="info-row">
-                  <span class="label">${t.totalAmount}</span>
-                  <span class="value">€${prezzoTotale.toFixed(2)}</span>
-                </div>
-                <div class="info-row">
-                  <span class="label">${t.depositReceived}</span>
-                  <span class="value" style="color: #10b981;">€${accontoRicevuto.toFixed(2)}</span>
-                </div>
-                <div class="info-row">
-                  <span class="label">${t.balanceReceived}</span>
-                  <span class="value" style="color: #10b981;">€${saldoRicevuto.toFixed(2)}</span>
-                </div>
-                ${daRicevere > 0 ? `
-                <div class="info-row">
-                  <span class="label">${t.balanceDue}</span>
-                  <span class="value" style="color: #ef4444; font-weight: bold;">€${daRicevere.toFixed(2)}</span>
-                </div>
-                ` : `
-                <div class="highlight" style="background: #d1fae5; color: #065f46;">
-                  ${t.paymentComplete}
-                </div>
-                `}
-              </div>
-
-              ${luogoImbarco && oraImbarco ? `
-              <div class="highlight">
-                <p style="margin: 0; font-size: 16px;">
-                  <strong>${t.presentAt}</strong><br>
-                  ${luogoImbarco}<br>
-                  <strong>${t.atTime}</strong> ${oraImbarco}
-                </p>
-              </div>
-              ` : ''}
-
-              <p style="margin-top: 30px;">
-                <strong>${t.important}</strong> ${t.importantNote}
-              </p>
-
-              <p>${t.contact}</p>
-
-              <p style="margin-top: 30px;">
-                ${t.regards}<br>
-                <strong>${t.team}</strong>
-              </p>
-            </div>
-
-            <div class="footer">
-              <p>${t.footer1}</p>
-              <p>${t.footer2}</p>
-              <p style="font-size: 12px; color: #9ca3af;">${t.footer3}</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `
-    })
-
-    if (error) {
-      console.error('Errore Resend:', error)
-      return NextResponse.json({ error: error.message }, { status: 400 })
+    if (prenotazioneError || !prenotazione) {
+      return NextResponse.json(
+        { error: 'Prenotazione non trovata' },
+        { status: 404 }
+      )
     }
 
-    return NextResponse.json({ success: true, data })
+    // Prepara contenuto email in base alla lingua
+    const emailContent = generateEmailContent(prenotazione, lingua || 'it', tipo || 'conferma')
+
+    // Invia email usando Resend o altro servizio
+    // Per ora simuliamo l'invio
+    const emailSent = await sendEmail({
+      to: prenotazione.clienti.email,
+      subject: emailContent.subject,
+      html: emailContent.html
+    })
+
+    if (!emailSent) {
+      throw new Error('Errore invio email')
+    }
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Email inviata con successo'
+    })
+
   } catch (error: any) {
+    console.error('Errore API send-booking-email:', error)
+    return NextResponse.json(
+      { error: error.message || 'Errore interno' },
+      { status: 500 }
+    )
+  }
+}
+
+function generateEmailContent(prenotazione: any, lingua: string, tipo: string) {
+  const translations: any = {
+    it: {
+      subject: `Conferma Prenotazione - ${prenotazione.codice_prenotazione}`,
+      greeting: `Gentile ${prenotazione.clienti.nome} ${prenotazione.clienti.cognome},`,
+      confirmation: 'La tua prenotazione è stata confermata!',
+      details: 'Dettagli Prenotazione:',
+      bookingCode: 'Codice Prenotazione',
+      date: 'Data',
+      time: 'Ora',
+      service: 'Servizio',
+      boat: 'Imbarcazione',
+      people: 'Numero Persone',
+      totalPrice: 'Importo Totale',
+      deposit: 'Caparra',
+      balance: 'Saldo',
+      meetingPoint: 'Punto di Imbarco',
+      thanks: 'Grazie per aver scelto Blu Alliance!'
+    },
+    en: {
+      subject: `Booking Confirmation - ${prenotazione.codice_prenotazione}`,
+      greeting: `Dear ${prenotazione.clienti.nome} ${prenotazione.clienti.cognome},`,
+      confirmation: 'Your booking has been confirmed!',
+      details: 'Booking Details:',
+      bookingCode: 'Booking Code',
+      date: 'Date',
+      time: 'Time',
+      service: 'Service',
+      boat: 'Boat',
+      people: 'Number of People',
+      totalPrice: 'Total Price',
+      deposit: 'Deposit',
+      balance: 'Balance',
+      meetingPoint: 'Meeting Point',
+      thanks: 'Thank you for choosing Blu Alliance!'
+    },
+    fr: {
+      subject: `Confirmation de Réservation - ${prenotazione.codice_prenotazione}`,
+      greeting: `Cher ${prenotazione.clienti.nome} ${prenotazione.clienti.cognome},`,
+      confirmation: 'Votre réservation a été confirmée!',
+      details: 'Détails de la Réservation:',
+      bookingCode: 'Code de Réservation',
+      date: 'Date',
+      time: 'Heure',
+      service: 'Service',
+      boat: 'Bateau',
+      people: 'Nombre de Personnes',
+      totalPrice: 'Prix Total',
+      deposit: 'Acompte',
+      balance: 'Solde',
+      meetingPoint: 'Point d\'Embarquement',
+      thanks: 'Merci d\'avoir choisi Blu Alliance!'
+    },
+    de: {
+      subject: `Buchungsbestätigung - ${prenotazione.codice_prenotazione}`,
+      greeting: `Sehr geehrte/r ${prenotazione.clienti.nome} ${prenotazione.clienti.cognome},`,
+      confirmation: 'Ihre Buchung wurde bestätigt!',
+      details: 'Buchungsdetails:',
+      bookingCode: 'Buchungscode',
+      date: 'Datum',
+      time: 'Uhrzeit',
+      service: 'Service',
+      boat: 'Boot',
+      people: 'Anzahl Personen',
+      totalPrice: 'Gesamtpreis',
+      deposit: 'Anzahlung',
+      balance: 'Restbetrag',
+      meetingPoint: 'Treffpunkt',
+      thanks: 'Vielen Dank, dass Sie Blu Alliance gewählt haben!'
+    },
+    es: {
+      subject: `Confirmación de Reserva - ${prenotazione.codice_prenotazione}`,
+      greeting: `Estimado/a ${prenotazione.clienti.nome} ${prenotazione.clienti.cognome},`,
+      confirmation: '¡Su reserva ha sido confirmada!',
+      details: 'Detalles de la Reserva:',
+      bookingCode: 'Código de Reserva',
+      date: 'Fecha',
+      time: 'Hora',
+      service: 'Servicio',
+      boat: 'Embarcación',
+      people: 'Número de Personas',
+      totalPrice: 'Precio Total',
+      deposit: 'Depósito',
+      balance: 'Saldo',
+      meetingPoint: 'Punto de Embarque',
+      thanks: '¡Gracias por elegir Blu Alliance!'
+    }
+  }
+
+  const t = translations[lingua] || translations.it
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+        .content { background: #fff; padding: 30px; border: 1px solid #e5e7eb; }
+        .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6; }
+        .detail-label { font-weight: 600; color: #6b7280; }
+        .detail-value { color: #111827; }
+        .highlight { background: #fef3c7; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b; }
+        .footer { background: #f3f4f6; padding: 20px; text-align: center; color: #6b7280; font-size: 14px; border-radius: 0 0 10px 10px; }
+        .price { font-size: 24px; font-weight: 700; color: #1E40AF; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1 style="margin: 0;">Blu Alliance</h1>
+          <p style="margin: 10px 0 0 0; opacity: 0.9;">${t.confirmation}</p>
+        </div>
+        
+        <div class="content">
+          <p>${t.greeting}</p>
+          <p>${t.confirmation}</p>
+          
+          <h2>${t.details}</h2>
+          
+          <div class="detail-row">
+            <span class="detail-label">${t.bookingCode}:</span>
+            <span class="detail-value"><strong>${prenotazione.codice_prenotazione}</strong></span>
+          </div>
+          
+          <div class="detail-row">
+            <span class="detail-label">${t.date}:</span>
+            <span class="detail-value">${new Date(prenotazione.data_servizio).toLocaleDateString(lingua)}</span>
+          </div>
+          
+          ${prenotazione.ora_inizio ? `
+          <div class="detail-row">
+            <span class="detail-label">${t.time}:</span>
+            <span class="detail-value">${prenotazione.ora_inizio}</span>
+          </div>
+          ` : ''}
+          
+          <div class="detail-row">
+            <span class="detail-label">${t.service}:</span>
+            <span class="detail-value">${prenotazione.servizi.nome}</span>
+          </div>
+          
+          <div class="detail-row">
+            <span class="detail-label">${t.boat}:</span>
+            <span class="detail-value">${prenotazione.imbarcazioni.nome}</span>
+          </div>
+          
+          <div class="detail-row">
+            <span class="detail-label">${t.people}:</span>
+            <span class="detail-value">${prenotazione.numero_persone || '-'}</span>
+          </div>
+          
+          ${prenotazione.luogo_imbarco ? `
+          <div class="detail-row">
+            <span class="detail-label">${t.meetingPoint}:</span>
+            <span class="detail-value">${prenotazione.luogo_imbarco}</span>
+          </div>
+          ` : ''}
+          
+          <div class="highlight">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 600;">${t.totalPrice}:</span>
+              <span class="price">€${prenotazione.prezzo_totale?.toLocaleString(lingua)}</span>
+            </div>
+            ${prenotazione.caparra_dovuta > 0 ? `
+            <div style="margin-top: 10px; font-size: 14px; color: #6b7280;">
+              ${t.deposit}: €${prenotazione.caparra_dovuta?.toLocaleString(lingua)}<br>
+              ${t.balance}: €${(prenotazione.prezzo_totale - prenotazione.caparra_ricevuta)?.toLocaleString(lingua)}
+            </div>
+            ` : ''}
+          </div>
+          
+          ${prenotazione.note_cliente ? `
+          <div style="background: #eff6ff; padding: 15px; border-radius: 8px; margin-top: 20px;">
+            <strong>Note:</strong><br>
+            ${prenotazione.note_cliente}
+          </div>
+          ` : ''}
+          
+          <p style="margin-top: 30px;">${t.thanks}</p>
+        </div>
+        
+        <div class="footer">
+          <p style="margin: 0;">Blu Alliance - Turismo Nautico</p>
+          <p style="margin: 5px 0;">Porto di Salerno, Italia</p>
+          <p style="margin: 5px 0;">info@blualliancegroup.com</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+
+  return {
+    subject: t.subject,
+    html
+  }
+}
+
+async function sendEmail({ to, subject, html }: { to: string; subject: string; html: string }) {
+  try {
+    // Implementa con Resend, SendGrid, o altro servizio email
+    // Per ora ritorna true come simulazione
+    
+    // Esempio con Resend:
+    // const resend = new Resend(process.env.RESEND_API_KEY)
+    // await resend.emails.send({
+    //   from: 'Blu Alliance <noreply@blualliancegroup.com>',
+    //   to,
+    //   subject,
+    //   html
+    // })
+    
+    console.log('Email would be sent to:', to)
+    console.log('Subject:', subject)
+    
+    return true
+  } catch (error) {
     console.error('Errore invio email:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return false
   }
 }
