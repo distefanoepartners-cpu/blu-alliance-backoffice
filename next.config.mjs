@@ -14,6 +14,7 @@ const withPWAConfig = withPWA({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  turbopack: {}, // ← AGGIUNGI QUESTA RIGA
   images: {
     remotePatterns: [
       {
