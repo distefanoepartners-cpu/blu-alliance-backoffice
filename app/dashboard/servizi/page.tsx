@@ -3,19 +3,22 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import Image from 'next/image'
 
 export default function ServiziPage() {
   const [servizi, setServizi] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
   
   const [formData, setFormData] = useState({
     nome: '',
     tipo: 'tour',
     descrizione: '',
     prezzo_base: 0,
-    attivo: true
+    attivo: true,
+    immagine_url: ''
   })
 
   const [prezziCategoria, setPrezziCategoria] = useState({
@@ -76,7 +79,8 @@ export default function ServiziPage() {
       tipo: 'tour',
       descrizione: '',
       prezzo_base: 0,
-      attivo: true
+      attivo: true,
+      immagine_url: ''
     })
     setPrezziCategoria({
       simple: '',
@@ -93,7 +97,8 @@ export default function ServiziPage() {
       tipo: servizio.tipo,
       descrizione: servizio.descrizione || '',
       prezzo_base: servizio.prezzo_base || 0,
-      attivo: servizio.attivo
+      attivo: servizio.attivo,
+      immagine_url: servizio.immagine_url || ''
     })
     setPrezziCategoria({
       simple: servizio.prezzi_categoria?.simple?.toString() || '',
@@ -101,6 +106,56 @@ export default function ServiziPage() {
       luxury: servizio.prezzi_categoria?.luxury?.toString() || ''
     })
     setShowModal(true)
+  }
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validazione
+    if (!file.type.startsWith('image/')) {
+      toast.error('Il file deve essere un\'immagine')
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) { // 5MB
+      toast.error('Immagine troppo grande (max 5MB)')
+      return
+    }
+
+    try {
+      setUploadingImage(true)
+
+      // Nome univoco per il file
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+      const filePath = `servizi/${fileName}`
+
+      // Upload su Supabase Storage
+      const { data, error: uploadError } = await supabase.storage
+      .from('immagini')  // ✅ Usa bucket esistente!
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) throw uploadError
+
+      // Ottieni URL pubblico
+      const { data: { publicUrl } } = supabase.storage
+        .from('immagini')
+        .getPublicUrl(filePath)
+
+      // Aggiorna form
+      setFormData(prev => ({ ...prev, immagine_url: publicUrl }))
+      toast.success('Immagine caricata!')
+
+    } catch (error: any) {
+      console.error('Errore upload:', error)
+      toast.error(error.message || 'Errore caricamento immagine')
+    } finally {
+      setUploadingImage(false)
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -116,7 +171,8 @@ export default function ServiziPage() {
             tipo: formData.tipo,
             descrizione: formData.descrizione,
             prezzo_base: formData.prezzo_base,
-            attivo: formData.attivo
+            attivo: formData.attivo,
+            immagine_url: formData.immagine_url || null
           })
           .eq('id', editingId)
 
@@ -135,7 +191,8 @@ export default function ServiziPage() {
             tipo: formData.tipo,
             descrizione: formData.descrizione,
             prezzo_base: formData.prezzo_base,
-            attivo: formData.attivo
+            attivo: formData.attivo,
+            immagine_url: formData.immagine_url || null
           }])
           .select()
           .single()
@@ -246,6 +303,18 @@ export default function ServiziPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
         {servizi.map((servizio) => (
           <div key={servizio.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            {/* Immagine Servizio */}
+            {servizio.immagine_url && (
+              <div className="relative h-48 w-full bg-gray-100">
+                <Image
+                  src={servizio.immagine_url}
+                  alt={servizio.nome}
+                  fill
+                  className="object-cover"
+                />
+              </div>
+            )}
+
             {/* Header Card */}
             <div className="p-6 border-b border-gray-100">
               <div className="flex items-start justify-between mb-2">
@@ -308,30 +377,32 @@ export default function ServiziPage() {
                       : '-'}
                   </span>
                 </div>
-              </div>
 
-              {/* Prezzo Base Fallback */}
-              {servizio.prezzo_base > 0 && (
-                <div className="mt-3 pt-3 border-t border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">Prezzo base</span>
-                    <span className="text-xs text-gray-500">€{servizio.prezzo_base.toLocaleString()}</span>
+                {/* Prezzo Base (fallback) */}
+                {!servizio.prezzi_categoria?.simple && 
+                 !servizio.prezzi_categoria?.premium && 
+                 !servizio.prezzi_categoria?.luxury && (
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <span className="text-sm text-gray-700">Prezzo Base</span>
+                    <span className="text-sm font-semibold text-gray-900">
+                      €{servizio.prezzo_base?.toLocaleString() || 0}
+                    </span>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* Actions */}
             <div className="p-4 bg-white border-t border-gray-100 flex gap-2">
               <button
                 onClick={() => handleEdit(servizio)}
-                className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-sm font-medium"
+                className="flex-1 px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
               >
                 Modifica
               </button>
               <button
                 onClick={() => handleDelete(servizio.id)}
-                className="flex-1 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 text-sm font-medium"
+                className="px-4 py-2 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100"
               >
                 Elimina
               </button>
@@ -340,181 +411,213 @@ export default function ServiziPage() {
         ))}
       </div>
 
-      {servizi.length === 0 && (
-        <div className="text-center py-12 bg-white rounded-xl shadow-sm border">
-          <div className="text-4xl mb-3">🎯</div>
-          <p className="text-gray-500 mb-4">Nessun servizio configurato</p>
-          <button
-            onClick={handleNew}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Crea il Primo Servizio
-          </button>
-        </div>
-      )}
-
-      {/* Modal Crea/Modifica */}
+      {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-xl max-w-2xl w-full my-8">
-            <div className="p-6 border-b flex items-center justify-between sticky top-0 bg-white z-10">
-              <h2 className="text-2xl font-bold text-gray-900">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-2xl font-bold">
                 {editingId ? 'Modifica Servizio' : 'Nuovo Servizio'}
               </h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">
-                ×
-              </button>
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
-              {/* Info Base */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Nome *</label>
-                  <input
-                    type="text"
-                    value={formData.nome}
-                    onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    placeholder="Es: Tour Capri"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Tipo</label>
-                  <select
-                    value={formData.tipo}
-                    onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  >
-                    <option value="tour">Tour</option>
-                    <option value="noleggio">Noleggio</option>
-                    <option value="escursione">Escursione</option>
-                    <option value="altro">Altro</option>
-                  </select>
-                </div>
+              {/* Immagine */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Immagine Servizio
+                </label>
+                
+                {formData.immagine_url ? (
+                  <div className="relative">
+                    <div className="relative h-48 w-full rounded-lg overflow-hidden bg-gray-100">
+                      <Image
+                        src={formData.immagine_url}
+                        alt="Preview"
+                        fill
+                        className="object-cover"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, immagine_url: '' }))}
+                      className="absolute top-2 right-2 px-3 py-1 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700"
+                    >
+                      Rimuovi
+                    </button>
+                  </div>
+                ) : (
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      disabled={uploadingImage}
+                      className="hidden"
+                      id="image-upload"
+                    />
+                    <label
+                      htmlFor="image-upload"
+                      className={`cursor-pointer ${uploadingImage ? 'opacity-50' : ''}`}
+                    >
+                      <div className="text-gray-600">
+                        {uploadingImage ? (
+                          <span>⏳ Caricamento...</span>
+                        ) : (
+                          <>
+                            <span className="text-4xl mb-2 block">📷</span>
+                            <span className="text-sm">Click per caricare immagine</span>
+                            <span className="text-xs text-gray-500 block mt-1">
+                              JPG, PNG, WebP (max 5MB)
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </label>
+                  </div>
+                )}
               </div>
 
+              {/* Nome */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Descrizione</label>
-                <textarea
-                  value={formData.descrizione}
-                  onChange={(e) => setFormData({ ...formData, descrizione: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  rows={3}
-                  placeholder="Descrizione del servizio..."
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Nome Servizio *
+                </label>
+                <input
+                  type="text"
+                  value={formData.nome}
+                  onChange={(e) => setFormData(prev => ({ ...prev, nome: e.target.value }))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
                 />
               </div>
 
-              {/* Prezzi per Categoria */}
-              <div className="bg-blue-50 rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Prezzi per Categoria Barca</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Imposta i prezzi in base alla categoria della barca scelta dal cliente.
-                </p>
+              {/* Tipo */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tipo Servizio *
+                </label>
+                <select
+                  value={formData.tipo}
+                  onChange={(e) => setFormData(prev => ({ ...prev, tipo: e.target.value }))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  required
+                >
+                  <option value="tour">Tour</option>
+                  <option value="locazione">Noleggio</option>
+                  <option value="taxi_mare">Taxi Mare</option>
+                </select>
+              </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Simple */}
-                  <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                      <span className="w-3 h-3 rounded-full bg-green-500"></span>
-                      Simple
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">€</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={prezziCategoria.simple}
-                        onChange={(e) => setPrezziCategoria({ ...prezziCategoria, simple: e.target.value })}
-                        className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg"
-                        placeholder="600"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Premium */}
-                  <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                      <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
-                      Premium
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">€</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={prezziCategoria.premium}
-                        onChange={(e) => setPrezziCategoria({ ...prezziCategoria, premium: e.target.value })}
-                        className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg"
-                        placeholder="900"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Luxury */}
-                  <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                      <span className="w-3 h-3 rounded-full bg-purple-500"></span>
-                      Luxury
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">€</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={prezziCategoria.luxury}
-                        onChange={(e) => setPrezziCategoria({ ...prezziCategoria, luxury: e.target.value })}
-                        className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg"
-                        placeholder="1500"
-                      />
-                    </div>
-                  </div>
-                </div>
+              {/* Descrizione */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Descrizione
+                </label>
+                <textarea
+                  value={formData.descrizione}
+                  onChange={(e) => setFormData(prev => ({ ...prev, descrizione: e.target.value }))}
+                  rows={4}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
               </div>
 
               {/* Prezzo Base */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Prezzo Base (Fallback)
+                  Prezzo Base (€)
                 </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">€</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.prezzo_base}
-                    onChange={(e) => setFormData({ ...formData, prezzo_base: parseFloat(e.target.value) || 0 })}
-                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg"
-                    placeholder="0"
-                  />
-                </div>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.prezzo_base}
+                  onChange={(e) => setFormData(prev => ({ ...prev, prezzo_base: parseFloat(e.target.value) || 0 }))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
                 <p className="text-xs text-gray-500 mt-1">
-                  Usato solo se non è impostato un prezzo per la categoria
+                  Usato come fallback se non impostati prezzi per categoria
                 </p>
+              </div>
+
+              {/* Prezzi per Categoria */}
+              <div className="border-t border-gray-200 pt-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Prezzi per Categoria Imbarcazione
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Simple */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <span className="inline-block w-3 h-3 rounded-full bg-green-500 mr-2"></span>
+                      Simple (€)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={prezziCategoria.simple}
+                      onChange={(e) => setPrezziCategoria(prev => ({ ...prev, simple: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+                      placeholder="0.00"
+                    />
+                  </div>
+
+                  {/* Premium */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <span className="inline-block w-3 h-3 rounded-full bg-yellow-500 mr-2"></span>
+                      Premium (€)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={prezziCategoria.premium}
+                      onChange={(e) => setPrezziCategoria(prev => ({ ...prev, premium: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500"
+                      placeholder="0.00"
+                    />
+                  </div>
+
+                  {/* Luxury */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <span className="inline-block w-3 h-3 rounded-full bg-purple-500 mr-2"></span>
+                      Luxury (€)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={prezziCategoria.luxury}
+                      onChange={(e) => setPrezziCategoria(prev => ({ ...prev, luxury: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Attivo */}
               <div className="flex items-center gap-3">
                 <input
                   type="checkbox"
-                  id="attivo"
                   checked={formData.attivo}
-                  onChange={(e) => setFormData({ ...formData, attivo: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 rounded"
+                  onChange={(e) => setFormData(prev => ({ ...prev, attivo: e.target.checked }))}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
                 />
-                <label htmlFor="attivo" className="text-sm font-medium text-gray-700">
+                <label className="text-sm font-medium text-gray-700">
                   Servizio attivo
                 </label>
               </div>
 
               {/* Actions */}
-              <div className="flex gap-3 pt-4 border-t">
+              <div className="flex gap-3 pt-4 border-t border-gray-200">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
                 >
                   Annulla
                 </button>
@@ -522,7 +625,7 @@ export default function ServiziPage() {
                   type="submit"
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
-                  {editingId ? 'Aggiorna' : 'Crea Servizio'}
+                  {editingId ? 'Salva Modifiche' : 'Crea Servizio'}
                 </button>
               </div>
             </form>
