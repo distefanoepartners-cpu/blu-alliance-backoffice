@@ -14,13 +14,20 @@ const withPWAConfig = withPWA({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  turbopack: {}, // ← AGGIUNGI QUESTA RIGA
+  turbopack: {},
   images: {
     remotePatterns: [
       {
         protocol: 'https',
         hostname: 'blualliancegroup.com',
         pathname: '/logo/**',
+      },
+      // 🔧 AGGIUNTO: Supporto immagini Supabase Storage
+      {
+        protocol: 'https',
+        hostname: 'wpzxvwenhjqnwhqowxms.supabase.co',
+        port: '',
+        pathname: '/storage/v1/object/public/**',
       },
     ],
   },
