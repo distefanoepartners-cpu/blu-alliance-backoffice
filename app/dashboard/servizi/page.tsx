@@ -133,7 +133,7 @@ export default function ServiziPage() {
 
       // Upload su Supabase Storage
       const { data, error: uploadError } = await supabase.storage
-      .from('immagini')  // ✅ Usa bucket esistente!
+        .from('immagini')
         .upload(filePath, file, {
           cacheControl: '3600',
           upsert: false
