@@ -31,3 +31,31 @@ body {
     text-wrap: balance;
   }
 }
+
+/* ========================================
+   FIX INPUT VISIBILITY - Backoffice Blu Alliance
+   ======================================== */
+@layer base {
+  input,
+  select,
+  textarea {
+    @apply text-gray-900 bg-white;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    @apply text-gray-400;
+  }
+
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    @apply text-gray-600 bg-gray-100;
+  }
+
+  /* Mantieni checkbox e radio trasparenti */
+  input[type="checkbox"],
+  input[type="radio"] {
+    @apply bg-transparent;
+  }
+}
