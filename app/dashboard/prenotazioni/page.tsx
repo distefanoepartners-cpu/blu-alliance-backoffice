@@ -1,17 +1,20 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 
 export default function PrenotazioniPage() {
+  const router = useRouter()
   const [prenotazioni, setPrenotazioni] = useState<any[]>([])
   const [statistiche, setStatistiche] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [filtroStato, setFiltroStato] = useState<string>('tutte')
   const [filtroPagamento, setFiltroPagamento] = useState<string>('tutti')
+  const [filtroMetodo, setFiltroMetodo] = useState<string>('tutti')
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [showEmailModal, setShowEmailModal] = useState(false)
@@ -78,6 +81,12 @@ export default function PrenotazioniPage() {
     // Filtro pagamento
     if (filtroPagamento !== 'tutti' && p.stato_pagamento !== filtroPagamento) return false
     
+    // Filtro metodo pagamento
+    if (filtroMetodo !== 'tutti') {
+      if (filtroMetodo === 'non_impostato' && p.metodo_pagamento) return false
+      if (filtroMetodo !== 'non_impostato' && p.metodo_pagamento !== filtroMetodo) return false
+    }
+    
     // Search
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase()
@@ -100,6 +109,12 @@ export default function PrenotazioniPage() {
   async function handleSavePrenotazione() {
     if (!editingPrenotazione) return
 
+    // Validazione metodo pagamento
+    if (!editingPrenotazione.metodo_pagamento) {
+      toast.error('⚠️ Metodo pagamento obbligatorio per chiusura incassi!')
+      return
+    }
+
     try {
       const { error } = await supabase
         .from('prenotazioni')
@@ -112,7 +127,10 @@ export default function PrenotazioniPage() {
           saldo_ricevuto: editingPrenotazione.saldo_ricevuto,
           note_interne: editingPrenotazione.note_interne,
           note_cliente: editingPrenotazione.note_cliente,
-          lingua: editingPrenotazione.lingua
+          lingua: editingPrenotazione.lingua,
+          metodo_pagamento: editingPrenotazione.metodo_pagamento,
+          metodo_pagamento_caparra: editingPrenotazione.metodo_pagamento_caparra,
+          metodo_pagamento_saldo: editingPrenotazione.metodo_pagamento_saldo
         })
         .eq('id', editingPrenotazione.id)
 
@@ -181,6 +199,7 @@ export default function PrenotazioniPage() {
   const getStatoPagamentoColor = (stato: string) => {
     switch (stato) {
       case 'pagato': return 'bg-green-100 text-green-700'
+      case 'caparra_pagata': return 'bg-yellow-100 text-yellow-700'
       case 'acconto_ricevuto': return 'bg-yellow-100 text-yellow-700'
       case 'parzialmente_pagato': return 'bg-orange-100 text-orange-700'
       case 'non_pagato': return 'bg-red-100 text-red-700'
@@ -191,11 +210,29 @@ export default function PrenotazioniPage() {
   const getStatoPagamentoLabel = (stato: string) => {
     switch (stato) {
       case 'pagato': return 'Pagato'
+      case 'caparra_pagata': return 'Caparra Pagata'
       case 'acconto_ricevuto': return 'Acconto Ricevuto'
       case 'parzialmente_pagato': return 'Parziale'
       case 'non_pagato': return 'Non Pagato'
       default: return stato
     }
+  }
+
+  // Calcola incassi per metodo
+  const incassiPerMetodo = {
+    stripe: prenotazioni
+      .filter(p => p.metodo_pagamento === 'stripe')
+      .reduce((sum, p) => sum + (p.caparra_ricevuta || 0) + (p.saldo_ricevuto || 0), 0),
+    contanti: prenotazioni
+      .filter(p => p.metodo_pagamento === 'contanti')
+      .reduce((sum, p) => sum + (p.caparra_ricevuta || 0) + (p.saldo_ricevuto || 0), 0),
+    pos: prenotazioni
+      .filter(p => p.metodo_pagamento === 'pos')
+      .reduce((sum, p) => sum + (p.caparra_ricevuta || 0) + (p.saldo_ricevuto || 0), 0),
+    bonifico: prenotazioni
+      .filter(p => p.metodo_pagamento === 'bonifico')
+      .reduce((sum, p) => sum + (p.caparra_ricevuta || 0) + (p.saldo_ricevuto || 0), 0),
+    nonImpostato: prenotazioni.filter(p => !p.metodo_pagamento).length
   }
 
   if (loading) {
@@ -292,6 +329,52 @@ export default function PrenotazioniPage() {
         </div>
       </div>
 
+      {/* Incassi per Metodo */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Incassi per Metodo</h2>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+            <div className="text-2xl mb-1">💳</div>
+            <div className="text-2xl font-bold text-blue-600">
+              €{incassiPerMetodo.stripe.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+            </div>
+            <div className="text-xs text-blue-700 mt-1">Stripe</div>
+          </div>
+
+          <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+            <div className="text-2xl mb-1">💵</div>
+            <div className="text-2xl font-bold text-green-600">
+              €{incassiPerMetodo.contanti.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+            </div>
+            <div className="text-xs text-green-700 mt-1">Contanti</div>
+          </div>
+
+          <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
+            <div className="text-2xl mb-1">💳</div>
+            <div className="text-2xl font-bold text-purple-600">
+              €{incassiPerMetodo.pos.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+            </div>
+            <div className="text-xs text-purple-700 mt-1">POS</div>
+          </div>
+
+          <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
+            <div className="text-2xl mb-1">🏦</div>
+            <div className="text-2xl font-bold text-orange-600">
+              €{incassiPerMetodo.bonifico.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+            </div>
+            <div className="text-xs text-orange-700 mt-1">Bonifico</div>
+          </div>
+
+          <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+            <div className="text-2xl mb-1">⚠️</div>
+            <div className="text-2xl font-bold text-red-600">
+              {incassiPerMetodo.nonImpostato}
+            </div>
+            <div className="text-xs text-red-700 mt-1">Non Impostato</div>
+          </div>
+        </div>
+      </div>
+
       {/* Stato Prenotazioni */}
       <div className="mb-8">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Stato Prenotazioni</h2>
@@ -328,7 +411,7 @@ export default function PrenotazioniPage() {
 
       {/* Filtri */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Search */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Cerca</label>
@@ -367,9 +450,28 @@ export default function PrenotazioniPage() {
             >
               <option value="tutti">Tutti</option>
               <option value="non_pagato">Non Pagato</option>
+              <option value="caparra_pagata">Caparra Pagata</option>
               <option value="acconto_ricevuto">Acconto Ricevuto</option>
               <option value="parzialmente_pagato">Parzialmente Pagato</option>
               <option value="pagato">Pagato</option>
+            </select>
+          </div>
+
+          {/* Metodo Pagamento */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Metodo Pagamento</label>
+            <select
+              value={filtroMetodo}
+              onChange={(e) => setFiltroMetodo(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            >
+              <option value="tutti">Tutti</option>
+              <option value="stripe">💳 Stripe</option>
+              <option value="contanti">💵 Contanti</option>
+              <option value="pos">💳 POS</option>
+              <option value="bonifico">🏦 Bonifico</option>
+              <option value="altro">📋 Altro</option>
+              <option value="non_impostato">⚠️ Non Impostato</option>
             </select>
           </div>
         </div>
@@ -385,6 +487,7 @@ export default function PrenotazioniPage() {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">CLIENTE</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">SERVIZIO</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">IMPORTO</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">METODO</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">STATO</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">AZIONI</th>
               </tr>
@@ -445,10 +548,10 @@ export default function PrenotazioniPage() {
                         </span>
                       </div>
                       <div className="text-xs text-blue-600">
-                        Acconto ricevuto: €{(prenotazione.caparra_ricevuta || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                        Acconto: €{(prenotazione.caparra_ricevuta || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
                       </div>
                       <div className="text-xs text-gray-500">
-                        Saldo ricevuto: €{(prenotazione.saldo_ricevuto || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                        Saldo: €{(prenotazione.saldo_ricevuto || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
                       </div>
                       <div className="text-xs font-semibold text-red-600">
                         Da ricevere: €{(
@@ -457,6 +560,83 @@ export default function PrenotazioniPage() {
                           (prenotazione.saldo_ricevuto || 0)
                         ).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
                       </div>
+                    </div>
+                  </td>
+
+                  {/* Metodo Pagamento */}
+                  <td className="px-4 py-4">
+                    <div className="space-y-2">
+                      {prenotazione.metodo_pagamento ? (
+                        <div className="flex items-center gap-2">
+                          {prenotazione.metodo_pagamento === 'stripe' && (
+                            <>
+                              <span className="text-xl">💳</span>
+                              <div>
+                                <div className="text-sm font-semibold text-blue-600">Stripe</div>
+                                <div className="text-xs text-gray-500">Online</div>
+                              </div>
+                            </>
+                          )}
+                          {prenotazione.metodo_pagamento === 'contanti' && (
+                            <>
+                              <span className="text-xl">💵</span>
+                              <div>
+                                <div className="text-sm font-semibold text-green-600">Contanti</div>
+                                <div className="text-xs text-gray-500">Cash</div>
+                              </div>
+                            </>
+                          )}
+                          {prenotazione.metodo_pagamento === 'pos' && (
+                            <>
+                              <span className="text-xl">💳</span>
+                              <div>
+                                <div className="text-sm font-semibold text-purple-600">POS</div>
+                                <div className="text-xs text-gray-500">Card</div>
+                              </div>
+                            </>
+                          )}
+                          {prenotazione.metodo_pagamento === 'bonifico' && (
+                            <>
+                              <span className="text-xl">🏦</span>
+                              <div>
+                                <div className="text-sm font-semibold text-orange-600">Bonifico</div>
+                                <div className="text-xs text-gray-500">Transfer</div>
+                              </div>
+                            </>
+                          )}
+                          {prenotazione.metodo_pagamento === 'altro' && (
+                            <>
+                              <span className="text-xl">📋</span>
+                              <div>
+                                <div className="text-sm font-semibold text-gray-600">Altro</div>
+                                <div className="text-xs text-gray-500">Other</div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">⚠️</span>
+                          <div>
+                            <div className="text-sm font-semibold text-red-600">Non impostato</div>
+                            <div className="text-xs text-gray-500">Da definire</div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Metodi Secondari */}
+                      {prenotazione.metodo_pagamento_caparra && 
+                       prenotazione.metodo_pagamento_caparra !== prenotazione.metodo_pagamento && (
+                        <div className="text-xs text-gray-500 border-t border-gray-100 pt-1">
+                          Caparra: {prenotazione.metodo_pagamento_caparra}
+                        </div>
+                      )}
+                      {prenotazione.metodo_pagamento_saldo && 
+                       prenotazione.metodo_pagamento_saldo !== prenotazione.metodo_pagamento && (
+                        <div className="text-xs text-gray-500">
+                          Saldo: {prenotazione.metodo_pagamento_saldo}
+                        </div>
+                      )}
                     </div>
                   </td>
 
@@ -477,20 +657,28 @@ export default function PrenotazioniPage() {
                     <div className="flex gap-2">
                       <button 
                         onClick={() => handleEdit(prenotazione)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" 
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" 
                         title="Modifica"
                       >
                         ✏️
                       </button>
-                      <button className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg" title="Dettagli">
+                      <button 
+                        onClick={() => router.push(`/backoffice/prenotazioni/${prenotazione.id}`)}
+                        className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg cursor-pointer transition-colors" 
+                        title="Dettagli"
+                      >
                         👁️
                       </button>
-                      <button className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="Pagamenti">
+                      <button 
+                        onClick={() => router.push(`/backoffice/prenotazioni/${prenotazione.id}#pagamenti`)}
+                        className="p-2 text-green-600 hover:bg-green-50 rounded-lg cursor-pointer transition-colors" 
+                        title="Pagamenti"
+                      >
                         💳
                       </button>
                       <button 
                         onClick={() => handleOpenEmailModal(prenotazione)}
-                        className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg" 
+                        className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors" 
                         title="Invia Email"
                       >
                         📧
@@ -636,6 +824,91 @@ export default function PrenotazioniPage() {
                     <option value="es">🇪🇸 Español</option>
                   </select>
                 </div>
+
+                {/* Metodo Pagamento */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Metodo Pagamento Principale *
+                  </label>
+                  <select
+                    value={editingPrenotazione.metodo_pagamento || ''}
+                    onChange={(e) => setEditingPrenotazione({
+                      ...editingPrenotazione,
+                      metodo_pagamento: e.target.value
+                    })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                  >
+                    <option value="">⚠️ Seleziona metodo...</option>
+                    <option value="stripe">💳 Stripe (Online)</option>
+                    <option value="contanti">💵 Contanti</option>
+                    <option value="pos">💳 POS / Carta</option>
+                    <option value="bonifico">🏦 Bonifico Bancario</option>
+                    <option value="altro">📋 Altro</option>
+                  </select>
+                  {!editingPrenotazione.metodo_pagamento && (
+                    <p className="text-xs text-red-600 mt-1">
+                      ⚠️ Obbligatorio per chiusura incassi
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Metodi Pagamento Dettagliati */}
+              <div className="col-span-2 bg-gray-50 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                  Dettaglio Metodi Pagamento (Opzionale)
+                </h4>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Metodo Caparra */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Metodo Caparra
+                    </label>
+                    <select
+                      value={editingPrenotazione.metodo_pagamento_caparra || editingPrenotazione.metodo_pagamento || ''}
+                      onChange={(e) => setEditingPrenotazione({
+                        ...editingPrenotazione,
+                        metodo_pagamento_caparra: e.target.value
+                      })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                    >
+                      <option value="">Usa metodo principale</option>
+                      <option value="stripe">💳 Stripe</option>
+                      <option value="contanti">💵 Contanti</option>
+                      <option value="pos">💳 POS</option>
+                      <option value="bonifico">🏦 Bonifico</option>
+                      <option value="altro">📋 Altro</option>
+                    </select>
+                  </div>
+
+                  {/* Metodo Saldo */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Metodo Saldo
+                    </label>
+                    <select
+                      value={editingPrenotazione.metodo_pagamento_saldo || editingPrenotazione.metodo_pagamento || ''}
+                      onChange={(e) => setEditingPrenotazione({
+                        ...editingPrenotazione,
+                        metodo_pagamento_saldo: e.target.value
+                      })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                    >
+                      <option value="">Usa metodo principale</option>
+                      <option value="stripe">💳 Stripe</option>
+                      <option value="contanti">💵 Contanti</option>
+                      <option value="pos">💳 POS</option>
+                      <option value="bonifico">🏦 Bonifico</option>
+                      <option value="altro">📋 Altro</option>
+                    </select>
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-500 mt-2">
+                  💡 Se caparra e saldo sono pagati con metodi diversi, specificalo qui
+                </p>
               </div>
 
               {/* Sezione Pagamenti */}

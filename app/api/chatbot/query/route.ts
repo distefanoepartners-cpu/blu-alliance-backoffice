@@ -1,265 +1,320 @@
-// FILE: /app/api/chatbot/query/route.ts
-// Endpoint principale per le conversazioni del chatbot
+/**
+ * BLU ALLIANCE CHATBOT API V3.0 + CORS
+ * File: app/api/chatbot/query/route.ts
+ * 
+ * Features V3:
+ * - Conversational funnel step-by-step
+ * - Session state management
+ * - Quick actions dinamiche per ogni step
+ * - CORS configurato per blualliancegroup.com
+ */
 
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import Anthropic from '@anthropic-ai/sdk'
-
-// Usa service_role per operazioni server-side (bypass RLS in modo sicuro)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-)
-
-// CORS Headers per permettere chiamate da blualliancegroup.com
-const corsHeaders = {
-  'Access-Control-Allow-Origin': 'https://blualliancegroup.com',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-}
-
-// Handle preflight OPTIONS request
-export async function OPTIONS() {
-  return NextResponse.json({}, { headers: corsHeaders })
-}
+import { NextRequest, NextResponse } from 'next/server';
+import Anthropic from '@anthropic-ai/sdk';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!
-})
+});
 
-// System prompt per il chatbot Blu Alliance
-const SYSTEM_PROMPT = `Sei l'assistente virtuale di Blu Alliance, un consorzio di turismo marittimo che opera dal Porto di Salerno.
+// ============================================
+// CORS CONFIGURATION
+// ============================================
 
-SERVIZI OFFERTI:
-- Tour in barca lungo la Costiera Amalfitana (Positano, Amalfi, Ravello)
-- Escursioni a Capri
-- Tour nel Cilento
-- Noleggio barche con e senza skipper
-- Water taxi
-- Tour collettivi
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*', // Oppure specifica: 'https://blualliancegroup.com'
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
 
-CARATTERISTICHE:
-- Diverse categorie di imbarcazioni: Simple, Premium, Luxury
-- Barche con capacità da 6 a 12+ persone
-- Servizi personalizzabili
-- Punti di imbarco: Porto di Salerno (Masuccio Salernitano, Molo Manfredi), Vietri, Cetara, Maiori, Minori, Amalfi
+// Handle OPTIONS preflight requests
+export async function OPTIONS(request: NextRequest) {
+  return NextResponse.json({}, { headers: corsHeaders });
+}
 
-COMPORTAMENTO:
-- Rispondi in modo cordiale, professionale e conciso
-- Usa emoji occasionalmente per rendere la conversazione più amichevole 🚤
-- Chiedi informazioni chiave: numero persone, data desiderata, tipo di esperienza
-- Suggerisci servizi e barche in base alle esigenze
-- Dopo 2-3 scambi, se l'utente sembra interessato, chiedi: "Vuoi che ti prepari un preventivo personalizzato?"
-- Per prenotazioni, raccogli: nome, email, telefono, numero persone, data preferita
-- Spiega che verranno ricontattati dal team entro 24 ore
-- Guida l'utente verso la prenotazione in modo naturale
-- Se non hai informazioni specifiche, suggerisci di chiamare il +39 379 234 2138
+// ============================================
+// SYSTEM PROMPT V3
+// ============================================
 
-IMPORTANTE:
-- NON inventare prezzi o disponibilità se non hai dati certi
-- NON confermare prenotazioni - solo assistere nella scelta
-- Fornisci informazioni basate sui dati reali del database
-- Sii proattivo nel guidare verso la prenotazione
-- Parla in italiano a meno che l'utente non scriva in inglese
+const SYSTEM_PROMPT = `
+Sei l'assistente virtuale di Blu Alliance, consorzio di turismo nautico al Porto di Salerno.
 
-CONTATTI:
-- Telefono: +39 379 234 2138
-- Disponibile per informazioni immediate`
+## OBIETTIVO
+Guidare l'utente step-by-step verso una prenotazione, facendo UNA domanda alla volta.
+
+## FLOW CONVERSAZIONALE
+
+**STEP 0: BENVENUTO**
+"Ciao! 👋 Cosa ti interessa oggi?"
+QUICK_ACTIONS: 🏖️|Tour|Tour organizzato;⛵|Noleggio|Noleggiare barca;🚤|Taxi Mare|Taxi mare;💬|Info|Altre informazioni
+
+**STEP 1: DESTINAZIONE (se Tour)**
+"Ottimo! Quale destinazione?"
+QUICK_ACTIONS: 🏝️|Capri|Tour Capri;🌅|Amalfi|Tour Amalfi;🍋|Cilento|Tour Cilento;🌊|Personalizzato|Tour personalizzato
+
+**STEP 2: DATA**
+"[Destinazione]! Quando vorresti partire?"
+QUICK_ACTIONS: 📅|Oggi|oggi;📅|Domani|domani;📅|Weekend|weekend;📅|Altra data|altra data
+
+**STEP 3: PERSONE**
+"Perfetto! Quante persone sarete?"
+QUICK_ACTIONS: 2 persone|2;4 persone|4;6 persone|6;8+ persone|8 o più
+
+**STEP 4: ORARIO**
+"Ottimo! Che orario preferite?"
+QUICK_ACTIONS: 🌅|Mattina (9:00)|mattina 9;☀️|Pomeriggio (14:00)|pomeriggio 14;🌇|Tramonto (17:00)|tramonto 17;⏰|Altro|altro orario
+
+**STEP 5: SKIPPER (solo noleggio)**
+"Avete la patente nautica?"
+QUICK_ACTIONS: ⛵|Sì, senza skipper|senza skipper;👨‍✈️|No, con skipper|con skipper
+
+**STEP 6: RIEPILOGO + PREVENTIVO**
+"✅ Ecco il riepilogo:
+
+📋 [SERVIZIO]
+📅 Data: [data]
+👥 Persone: [N]
+⏰ Orario: [orario]
+
+💰 PREVENTIVO
+Simple: €[X-Y]
+Premium: €[X-Y]
+Luxury: €[X-Y]
+
+Vuoi procedere?"
+QUICK_ACTIONS: ✅|Prenota ora|prenota;📧|Email preventivo|email preventivo;💬|Domande|domande;🔄|Ricomincia|ricomincia
+
+**STEP 7: PRENOTAZIONE**
+Se sceglie "Prenota":
+1. "Perfetto! Il tuo nome?"
+2. "Grazie! La tua email?"
+3. "Ottimo! Telefono?"
+4. "✅ Richiesta registrata! Ti contatteremo entro 2h"
+QUICK_ACTIONS: 📋|Cosa portare|cosa portare;🌊|Info meteo|meteo;💳|Pagamento|come si paga;👋|Chiudi|grazie
+
+**STEP 8: EMAIL PREVENTIVO**
+Se sceglie "Email preventivo":
+1. "Lasciami la tua email"
+2. "✅ Preventivo inviato! Vuoi prenotare?"
+QUICK_ACTIONS: ✅|Prenota|prenota;💬|Domande|domande;👋|Grazie|grazie
+
+## REGOLE
+- UNA domanda alla volta
+- SEMPRE quick actions (formato: emoji|label|value separati da ;)
+- Conferma scelta prima di prossima domanda
+- Se utente fa domande fuori flow: rispondi breve + riporta al flow
+
+## PRICING
+Tour Capri: €500-800 (Simple), €800-1200 (Premium/Luxury)
+Tour Amalfi: €400-600 (Simple), €700-1000 (Premium/Luxury)
+Tour Cilento: €350-500 (Simple), €600-900 (Premium/Luxury)
+Noleggio: €300-500 (Simple), €600-900 (Premium), €1000-1500 (Luxury)
+
+Sempre aggiungere: "Il prezzo esatto dipende dall'imbarcazione scelta"
+`;
+
+// ============================================
+// STATE MANAGEMENT
+// ============================================
+
+interface SessionState {
+  step: number;
+  service?: string;
+  destination?: string;
+  date?: string;
+  people?: number;
+  time?: string;
+  skipper?: boolean;
+  nome?: string;
+  email?: string;
+  telefono?: string;
+}
+
+function parseQuickActions(response: string): any[] {
+  const match = response.match(/QUICK_ACTIONS:\s*(.+?)(?:\n|$)/);
+  if (!match) return [];
+
+  try {
+    const actionsStr = match[1].trim();
+    const actions = actionsStr.split(';').map(action => {
+      const parts = action.split('|');
+      if (parts.length === 2) {
+        // Format: label|value (no emoji)
+        return {
+          emoji: '',
+          label: parts[0].trim(),
+          value: parts[1].trim()
+        };
+      } else if (parts.length === 3) {
+        // Format: emoji|label|value
+        return {
+          emoji: parts[0].trim(),
+          label: parts[1].trim(),
+          value: parts[2].trim()
+        };
+      }
+      return null;
+    }).filter(Boolean);
+    
+    return actions;
+  } catch (error) {
+    console.error('Error parsing quick actions:', error);
+    return [];
+  }
+}
+
+function removeQuickActionsFromResponse(response: string): string {
+  return response.replace(/QUICK_ACTIONS:.+(?:\n|$)/g, '').trim();
+}
+
+function buildContextFromState(state: SessionState): string {
+  let context = '\n\n## STATO CONVERSAZIONE CORRENTE:\n';
+  context += `Step: ${state.step}\n`;
+  
+  if (state.service) context += `Servizio scelto: ${state.service}\n`;
+  if (state.destination) context += `Destinazione: ${state.destination}\n`;
+  if (state.date) context += `Data: ${state.date}\n`;
+  if (state.people) context += `Persone: ${state.people}\n`;
+  if (state.time) context += `Orario: ${state.time}\n`;
+  if (state.skipper !== undefined) context += `Skipper: ${state.skipper ? 'Con skipper' : 'Senza skipper'}\n`;
+  if (state.nome) context += `Nome: ${state.nome}\n`;
+  if (state.email) context += `Email: ${state.email}\n`;
+  if (state.telefono) context += `Telefono: ${state.telefono}\n`;
+  
+  context += '\nGuida l\'utente al prossimo step del funnel.\n';
+  
+  return context;
+}
+
+// ============================================
+// MAIN API ROUTE - POST
+// ============================================
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { message, conversationHistory = [], userInfo = null } = body
+    const body = await request.json();
+    const { message, conversationHistory = [], userInfo = null } = body;
 
     if (!message) {
-      return NextResponse.json({ error: 'Messaggio richiesto' }, { status: 400, headers: corsHeaders })
+      return NextResponse.json(
+        { error: 'Missing message' },
+        { status: 400, headers: corsHeaders }
+      );
     }
 
-    // Aggiungi info utente al context se disponibili
-    let userContext = '';
-    if (userInfo && (userInfo.nome || userInfo.email || userInfo.telefono)) {
-      userContext = `\n\nINFORMAZIONI UTENTE:
-Nome: ${userInfo.nome || 'Non fornito'}
-Email: ${userInfo.email || 'Non fornita'}
-Telefono: ${userInfo.telefono || 'Non fornito'}
+    // Extract or initialize session state
+    let sessionState: SessionState = {
+      step: 0
+    };
 
-Usa queste informazioni per personalizzare la conversazione. Se hai il nome, chiamalo per nome.`;
+    // Try to extract state from last assistant message
+    if (conversationHistory.length > 0) {
+      const lastMessage = conversationHistory[conversationHistory.length - 1];
+      if (lastMessage.metadata?.state) {
+        sessionState = lastMessage.metadata.state;
+      }
     }
 
-    // Recupera dati dal database per contestualizzare la risposta
-    const [imbarcazioniResult, serviziResult] = await Promise.all([
-      supabase
-        .from('imbarcazioni')
-        .select('id, nome, tipo, categoria, capacita_massima, descrizione, caratteristiche, attiva')
-        .eq('attiva', true),
-      supabase
-        .from('servizi')
-        .select('id, nome, tipo, descrizione, prezzo_base, durata_minuti, include, prezzo_per_persona, min_persone, max_persone, luogo_imbarco, attivo')
-        .eq('attivo', true)
-    ])
+    // Build context with current state
+    const stateContext = buildContextFromState(sessionState);
 
-    const imbarcazioni = imbarcazioniResult.data || []
-    const servizi = serviziResult.data || []
-
-    // Recupera relazioni imbarcazioni-servizi
-    const { data: relazioni } = await supabase
-      .from('imbarcazioni_servizi')
-      .select('imbarcazione_id, servizio_id')
-      .eq('attivo', true)
-
-    // Crea un contesto con i dati disponibili
-    const contextData = {
-      imbarcazioni: imbarcazioni.map(i => ({
-        nome: i.nome,
-        tipo: i.tipo,
-        categoria: i.categoria,
-        capacita: i.capacita_massima,
-        descrizione: i.descrizione,
-        caratteristiche: i.caratteristiche
+    // Build messages for Claude
+    const messages = [
+      ...conversationHistory.map((msg: any) => ({
+        role: msg.role,
+        content: msg.content
       })),
-      servizi: servizi.map(s => {
-        // Trova barche associate a questo servizio
-        const barcheIds = relazioni?.filter(r => r.servizio_id === s.id).map(r => r.imbarcazione_id) || []
-        const barcheAssociate = imbarcazioni.filter(i => barcheIds.includes(i.id)).map(i => i.nome)
-
-        return {
-          nome: s.nome,
-          tipo: s.tipo,
-          descrizione: s.descrizione,
-          prezzo_base: s.prezzo_base,
-          durata_ore: (s.durata_minuti / 60).toFixed(1),
-          include: s.include,
-          prezzo_per_persona: s.prezzo_per_persona,
-          min_persone: s.min_persone,
-          max_persone: s.max_persone,
-          luogo_imbarco: s.luogo_imbarco,
-          barche_disponibili: barcheAssociate
-        }
-      })
-    }
-
-    // Costruisci i messaggi per Claude
-    const messages: Anthropic.MessageParam[] = [
-      ...conversationHistory,
       {
         role: 'user',
-        content: `DATI DISPONIBILI:
-${JSON.stringify(contextData, null, 2)}${userContext}
-
-DOMANDA CLIENTE:
-${message}`
+        content: message
       }
-    ]
+    ];
 
-    // Chiama Claude API
+    // Call Claude API
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages: messages
-    })
+      system: SYSTEM_PROMPT + stateContext,
+      messages
+    });
 
-    const assistantMessage = response.content[0].type === 'text' 
+    // Extract response
+    let botResponse = response.content[0].type === 'text' 
       ? response.content[0].text 
-      : 'Mi dispiace, non ho potuto elaborare la risposta.'
+      : '';
 
-      // Debug logging
-    console.log('🔍 DEBUG LEAD SAVING:');
-    console.log('- conversationHistory.length:', conversationHistory.length);
-    console.log('- userInfo:', JSON.stringify(userInfo));
-    console.log('- userInfo presente?', !!userInfo);
-    console.log('- email o nome?', userInfo?.email || userInfo?.nome);
-    console.log('- Condizione passa?', conversationHistory.length === 0 && userInfo && (userInfo.email || userInfo.nome));
+    // Parse quick actions
+    const quickActions = parseQuickActions(botResponse);
+    botResponse = removeQuickActionsFromResponse(botResponse);
 
-    // Salva lead se è il primo messaggio e ha fornito contatti
-    if (conversationHistory.length === 0 && userInfo && (userInfo.email || userInfo.nome)) {
-      console.log('✅ Tentativo salvataggio lead...');
-      try {
-        const { data: newLead, error: insertError } = await supabase
-          .from('chatbot_leads')
-          .insert([{
-            nome: userInfo.nome || null,
-            cognome: null,
-            email: userInfo.email || null,
-            telefono: userInfo.telefono || null,
-            messaggio: message,
-            conversazione_json: [
-              { role: 'user', content: message },
-              { role: 'assistant', content: assistantMessage }
-            ],
-            stato: 'nuovo'
-          }])
-          .select()
-          .single()
-        
-        if (insertError) {
-          console.error('❌ Errore INSERT:', insertError)
-        } else {
-          console.log('✅ Lead salvato con successo! ID:', newLead?.id)
-        }
-      } catch (leadError) {
-        console.error('❌ Errore salvataggio lead (catch):', leadError)
-        // Non bloccare la conversazione se il salvataggio lead fallisce
-      }
-    } else {
-      console.log('⚠️ Condizione NON passata - lead NON salvato');
-      console.log('  Motivi possibili:');
-      console.log('  - conversationHistory non vuoto?', conversationHistory.length > 0);
-      console.log('  - userInfo mancante?', !userInfo);
-      console.log('  - email e nome mancanti?', !(userInfo?.email || userInfo?.nome));
+    // Update session state based on response
+    sessionState.step += 1;
+
+    // Detect what info was collected
+    const lowerMsg = message.toLowerCase();
+    
+    if (lowerMsg.includes('tour') && !sessionState.service) {
+      sessionState.service = 'tour';
+    } else if (lowerMsg.includes('noleggio') && !sessionState.service) {
+      sessionState.service = 'noleggio';
     }
     
-    // Aggiorna conversazione se continua
-    if (conversationHistory.length > 0 && userInfo && userInfo.email) {
-      // Aggiorna conversazione se il lead esiste già (conversazione continua)
-      try {
-        const { data: existingLead } = await supabase
-          .from('chatbot_leads')
-          .select('id')
-          .eq('email', userInfo.email)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single()
-        
-        if (existingLead) {
-          await supabase
-            .from('chatbot_leads')
-            .update({
-              conversazione_json: [
-                ...conversationHistory,
-                { role: 'user', content: message },
-                { role: 'assistant', content: assistantMessage }
-              ],
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', existingLead.id)
-        }
-      } catch (updateError) {
-        console.error('Errore aggiornamento lead:', updateError)
-        // Non bloccare la conversazione
-      }
+    if (lowerMsg.includes('capri') && !sessionState.destination) {
+      sessionState.destination = 'Capri';
+    } else if (lowerMsg.includes('amalfi') && !sessionState.destination) {
+      sessionState.destination = 'Amalfi';
+    }
+    
+    // Extract numbers for people
+    const peopleMatch = message.match(/(\d+)\s*persone?/i);
+    if (peopleMatch && !sessionState.people) {
+      sessionState.people = parseInt(peopleMatch[1]);
     }
 
+    // Build updated conversation history
+    const updatedHistory = [
+      ...conversationHistory,
+      {
+        role: 'user',
+        content: message
+      },
+      {
+        role: 'assistant',
+        content: botResponse,
+        metadata: {
+          quickActions,
+          state: sessionState
+        }
+      }
+    ];
+
+    // Return response with CORS headers
     return NextResponse.json({
-      message: assistantMessage,
-      conversationHistory: [
-        ...conversationHistory,
-        { role: 'user', content: message },
-        { role: 'assistant', content: assistantMessage }
-      ]
-    }, { headers: corsHeaders })
+      message: botResponse,
+      quickActions,
+      conversationHistory: updatedHistory
+    }, { headers: corsHeaders });
 
   } catch (error: any) {
-    console.error('Errore chatbot:', error)
+    console.error('Chat API error:', error);
+    
     return NextResponse.json(
-      { error: 'Errore nell\'elaborazione della richiesta', details: error.message },
+      { 
+        error: 'Internal server error',
+        message: error.message 
+      },
       { status: 500, headers: corsHeaders }
-    )
+    );
   }
+}
+
+// ============================================
+// HEALTH CHECK - GET
+// ============================================
+
+export async function GET() {
+  return NextResponse.json({
+    status: 'ok',
+    service: 'Blu Alliance Chatbot API v3.0 - Conversational Funnel',
+    timestamp: new Date().toISOString()
+  }, { headers: corsHeaders });
 }

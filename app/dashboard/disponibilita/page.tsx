@@ -16,10 +16,17 @@ export default function PlanningSettimanale() {
   const [loading, setLoading] = useState(true)
   const [filtroFornitore, setFiltroFornitore] = useState<string>('tutti')
   const [filtroCategoria, setFiltroCategoria] = useState<string>('tutti')
+  
+  // Modal Blocco
   const [showBloccoModal, setShowBloccoModal] = useState(false)
   const [selectedCell, setSelectedCell] = useState<{imbarcazioneId: string, date: Date, imbarcazioneNome: string} | null>(null)
   const [motivoBlocco, setMotivoBlocco] = useState('')
   const [tipoBlocco, setTipoBlocco] = useState<'manutenzione' | 'prenotazione_esterna' | 'altro'>('altro')
+  
+  // NUOVO: Modal Dettagli Prenotazione
+  const [showDettagliModal, setShowDettagliModal] = useState(false)
+  const [prenotazioneSelezionata, setPrenotazioneSelezionata] = useState<any>(null)
+  const [loadingDettagli, setLoadingDettagli] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -53,7 +60,7 @@ export default function PlanningSettimanale() {
       // Carica prenotazioni
       const { data: prenotazioniData } = await supabase
         .from('prenotazioni')
-        .select('id, imbarcazione_id, data_servizio, stato, numero_persone')
+        .select('id, imbarcazione_id, data_servizio, stato, numero_persone, codice_prenotazione')
         .gte('data_servizio', format(currentWeekStart, 'yyyy-MM-dd'))
         .lte('data_servizio', format(weekEnd, 'yyyy-MM-dd'))
         .in('stato', ['confermata', 'in_attesa', 'completata'])
@@ -130,11 +137,13 @@ export default function PlanningSettimanale() {
     return { type: 'disponibile' }
   }
 
+  // MODIFICATO: Click su cella
   function handleCellClick(imbarcazioneId: string, imbarcazioneNome: string, date: Date) {
     const cellStatus = getCellStatus(imbarcazioneId, date)
 
     if (cellStatus.type === 'prenotazione') {
-      toast.error('Questa data ha già una prenotazione')
+      // NUOVO: Mostra dettagli prenotazione
+      mostraDettagliPrenotazione(cellStatus.data.id)
       return
     }
 
@@ -149,6 +158,34 @@ export default function PlanningSettimanale() {
       setMotivoBlocco('')
       setTipoBlocco('altro')
       setShowBloccoModal(true)
+    }
+  }
+
+  // NUOVA: Carica dettagli prenotazione
+  async function mostraDettagliPrenotazione(prenotazioneId: string) {
+    try {
+      setLoadingDettagli(true)
+      
+      const { data, error } = await supabase
+        .from('prenotazioni')
+        .select(`
+          *,
+          servizi (id, nome, tipo, prezzo_base),
+          imbarcazioni (id, nome, tipo, categoria),
+          clienti (id, nome, cognome, email, telefono, nazione)
+        `)
+        .eq('id', prenotazioneId)
+        .single()
+
+      if (error) throw error
+
+      setPrenotazioneSelezionata(data)
+      setShowDettagliModal(true)
+    } catch (error) {
+      console.error('Errore caricamento dettagli:', error)
+      toast.error('Errore nel caricamento dei dettagli')
+    } finally {
+      setLoadingDettagli(false)
     }
   }
 
@@ -212,7 +249,7 @@ export default function PlanningSettimanale() {
           Planning Settimanale
         </h1>
         <p className="text-gray-600">
-          Click su una cella per bloccare/sbloccare la disponibilità
+          Click su una cella: 📋 Vedi dettagli • ✅ Blocca • 🚫 Sblocca
         </p>
 
         {/* Navigation */}
@@ -312,7 +349,7 @@ export default function PlanningSettimanale() {
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-blue-100 border-2 border-blue-400 rounded"></div>
-            <span>📋 Prenotata (non modificabile)</span>
+            <span>📋 Prenotata (click per dettagli)</span>
           </div>
         </div>
       </div>
@@ -368,10 +405,10 @@ export default function PlanningSettimanale() {
                     let cursorStyle = 'cursor-pointer'
 
                     if (cellStatus.type === 'prenotazione') {
-                      bgColor = 'bg-blue-50'
+                      bgColor = 'bg-blue-50 hover:bg-blue-100'
                       borderColor = 'border-blue-300'
                       icon = '📋'
-                      cursorStyle = 'cursor-not-allowed'
+                      cursorStyle = 'cursor-pointer'
                     } else if (cellStatus.type === 'blocco') {
                       bgColor = 'bg-red-50 hover:bg-red-100'
                       borderColor = 'border-red-300'
@@ -387,7 +424,6 @@ export default function PlanningSettimanale() {
                         <button
                           onClick={() => handleCellClick(barca.id, barca.nome, day)}
                           className={`w-full h-full px-1 md:px-3 py-3 md:py-6 text-center border-2 transition-all ${bgColor} ${borderColor} ${cursorStyle}`}
-                          disabled={cellStatus.type === 'prenotazione'}
                         >
                           <div className="flex flex-col items-center justify-center gap-0 md:gap-1">
                             <span className="text-sm md:text-xl">{icon}</span>
@@ -517,6 +553,184 @@ export default function PlanningSettimanale() {
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
               >
                 Blocca
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NUOVO: Modal Dettagli Prenotazione */}
+      {showDettagliModal && prenotazioneSelezionata && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-2xl w-full p-6 my-8">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">
+                📋 Dettagli Prenotazione
+              </h2>
+              <button
+                onClick={() => setShowDettagliModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-3xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            {loadingDettagli ? (
+              <div className="text-center py-8 text-gray-600">
+                Caricamento dettagli...
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Codice Prenotazione */}
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 text-center">
+                  <div className="text-sm text-blue-600 font-medium mb-1">Codice Prenotazione</div>
+                  <div className="text-2xl font-bold text-blue-900">
+                    {prenotazioneSelezionata.codice_prenotazione}
+                  </div>
+                </div>
+
+                {/* Info Servizio */}
+                <div className="border-b pb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">🚤 Servizio</h3>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-gray-600">Imbarcazione:</span>
+                      <div className="font-medium text-gray-900">
+                        {prenotazioneSelezionata.imbarcazioni?.nome || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Servizio:</span>
+                      <div className="font-medium text-gray-900">
+                        {prenotazioneSelezionata.servizi?.nome || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Data:</span>
+                      <div className="font-medium text-gray-900">
+                        {format(parseISO(prenotazioneSelezionata.data_servizio), 'dd MMMM yyyy', { locale: it })}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Ora:</span>
+                      <div className="font-medium text-gray-900">
+                        {prenotazioneSelezionata.ora_imbarco || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Persone:</span>
+                      <div className="font-medium text-gray-900">
+                        {prenotazioneSelezionata.numero_persone} pax
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Porto:</span>
+                      <div className="font-medium text-gray-900">
+                        {prenotazioneSelezionata.porto_imbarco || 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Cliente */}
+                <div className="border-b pb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">👤 Cliente</h3>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-gray-600">Nome:</span>
+                      <div className="font-medium text-gray-900">
+                        {prenotazioneSelezionata.clienti?.nome} {prenotazioneSelezionata.clienti?.cognome}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Email:</span>
+                      <div className="font-medium text-gray-900">
+                        {prenotazioneSelezionata.clienti?.email || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Telefono:</span>
+                      <div className="font-medium text-gray-900">
+                        {prenotazioneSelezionata.clienti?.telefono || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Nazione:</span>
+                      <div className="font-medium text-gray-900">
+                        {prenotazioneSelezionata.clienti?.nazione || 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Pagamento */}
+                <div className="border-b pb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">💰 Pagamento</h3>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-gray-600">Prezzo Totale:</span>
+                      <div className="font-medium text-gray-900">
+                        €{parseFloat(prenotazioneSelezionata.prezzo_totale || 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Importo Pagato:</span>
+                      <div className="font-medium text-green-600">
+                        €{parseFloat(prenotazioneSelezionata.importo_pagato || 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Tipo Pagamento:</span>
+                      <div className="font-medium text-gray-900">
+                        {prenotazioneSelezionata.tipo_pagamento === 'caparra' ? 'Caparra 50%' : 'Completo'}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Stato Pagamento:</span>
+                      <div className={`font-medium ${
+                        prenotazioneSelezionata.stato_pagamento === 'pagato' ? 'text-green-600' :
+                        prenotazioneSelezionata.stato_pagamento === 'parzialmente_pagato' ? 'text-orange-600' :
+                        'text-red-600'
+                      }`}>
+                        {prenotazioneSelezionata.stato_pagamento || 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stato */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">📊 Stato</h3>
+                  <div className="flex items-center gap-4">
+                    <span className={`px-4 py-2 rounded-lg font-medium ${
+                      prenotazioneSelezionata.stato === 'confermata' ? 'bg-green-100 text-green-800' :
+                      prenotazioneSelezionata.stato === 'in_attesa' ? 'bg-yellow-100 text-yellow-800' :
+                      prenotazioneSelezionata.stato === 'completata' ? 'bg-blue-100 text-blue-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {prenotazioneSelezionata.stato}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Note */}
+                {prenotazioneSelezionata.note_cliente && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">📝 Note Cliente</h3>
+                    <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700">
+                      {prenotazioneSelezionata.note_cliente}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="mt-6">
+              <button
+                onClick={() => setShowDettagliModal(false)}
+                className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+              >
+                Chiudi
               </button>
             </div>
           </div>

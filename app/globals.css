@@ -36,6 +36,7 @@ body {
    FIX INPUT VISIBILITY - Backoffice Blu Alliance
    ======================================== */
 @layer base {
+  /* Fix input, select, textarea */
   input,
   select,
   textarea {
@@ -57,5 +58,21 @@ body {
   input[type="checkbox"],
   input[type="radio"] {
     @apply bg-transparent;
+  }
+
+  /* Fix testo visibile nelle card bianche */
+  .bg-white {
+    @apply text-gray-900;
+  }
+
+  /* Assicura che tutto il testo nelle card sia visibile */
+  .bg-white span,
+  .bg-white p,
+  .bg-white h1,
+  .bg-white h2,
+  .bg-white h3,
+  .bg-white h4,
+  .bg-white div {
+    color: inherit;
   }
 }

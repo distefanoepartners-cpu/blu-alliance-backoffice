@@ -18,7 +18,11 @@ export default function ServiziPage() {
     descrizione: '',
     prezzo_base: 0,
     attivo: true,
-    immagine_url: ''
+    immagine_url: '',
+    durata_ore: 0,
+    durata_minuti: 0,
+    luogo_imbarco: '',
+    ora_imbarco: ''
   })
 
   const [prezziCategoria, setPrezziCategoria] = useState({
@@ -26,6 +30,17 @@ export default function ServiziPage() {
     premium: '',
     luxury: ''
   })
+
+  // Lista porti d'imbarco
+  const portiImbarco = [
+    'Salerno',
+    'Amalfi',
+    'Positano',
+    'Cetara',
+    'Maiori',
+    'Minori',
+    'Vietri sul Mare'
+  ]
 
   useEffect(() => {
     loadData()
@@ -80,7 +95,11 @@ export default function ServiziPage() {
       descrizione: '',
       prezzo_base: 0,
       attivo: true,
-      immagine_url: ''
+      immagine_url: '',
+      durata_ore: 0,
+      durata_minuti: 0,
+      luogo_imbarco: '',
+      ora_imbarco: ''
     })
     setPrezziCategoria({
       simple: '',
@@ -91,6 +110,11 @@ export default function ServiziPage() {
   }
 
   function handleEdit(servizio: any) {
+    // Converti durata_minuti in ore e minuti
+    const totMinuti = servizio.durata_minuti || 0
+    const ore = Math.floor(totMinuti / 60)
+    const minuti = totMinuti % 60
+    
     setEditingId(servizio.id)
     setFormData({
       nome: servizio.nome,
@@ -98,7 +122,11 @@ export default function ServiziPage() {
       descrizione: servizio.descrizione || '',
       prezzo_base: servizio.prezzo_base || 0,
       attivo: servizio.attivo,
-      immagine_url: servizio.immagine_url || ''
+      immagine_url: servizio.immagine_url || '',
+      durata_ore: ore,
+      durata_minuti: minuti,
+      luogo_imbarco: servizio.luogo_imbarco || '',
+      ora_imbarco: servizio.ora_imbarco || ''
     })
     setPrezziCategoria({
       simple: servizio.prezzi_categoria?.simple?.toString() || '',
@@ -118,21 +146,19 @@ export default function ServiziPage() {
       return
     }
 
-    if (file.size > 5 * 1024 * 1024) { // 5MB
-      toast.error('Immagine troppo grande (max 5MB)')
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('L\'immagine deve essere massimo 5MB')
       return
     }
 
-    try {
-      setUploadingImage(true)
+    setUploadingImage(true)
 
-      // Nome univoco per il file
+    try {
       const fileExt = file.name.split('.').pop()
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+      const fileName = `${Date.now()}.${fileExt}`
       const filePath = `servizi/${fileName}`
 
-      // Upload su Supabase Storage
-      const { data, error: uploadError } = await supabase.storage
+      const { error: uploadError, data } = await supabase.storage
         .from('immagini')
         .upload(filePath, file, {
           cacheControl: '3600',
@@ -141,18 +167,15 @@ export default function ServiziPage() {
 
       if (uploadError) throw uploadError
 
-      // Ottieni URL pubblico
       const { data: { publicUrl } } = supabase.storage
         .from('immagini')
         .getPublicUrl(filePath)
 
-      // Aggiorna form
       setFormData(prev => ({ ...prev, immagine_url: publicUrl }))
       toast.success('Immagine caricata!')
-
     } catch (error: any) {
       console.error('Errore upload:', error)
-      toast.error(error.message || 'Errore caricamento immagine')
+      toast.error('Errore nel caricamento immagine')
     } finally {
       setUploadingImage(false)
     }
@@ -162,45 +185,46 @@ export default function ServiziPage() {
     e.preventDefault()
 
     try {
+      // Converti ore e minuti in totale minuti
+      const durataMinutiTotali = (formData.durata_ore * 60) + formData.durata_minuti
+
+      const dataToSave = {
+        nome: formData.nome,
+        tipo: formData.tipo,
+        descrizione: formData.descrizione,
+        prezzo_base: formData.prezzo_base,
+        attivo: formData.attivo,
+        immagine_url: formData.immagine_url,
+        durata_minuti: durataMinutiTotali,
+        luogo_imbarco: formData.luogo_imbarco,
+        ora_imbarco: formData.ora_imbarco || null
+      }
+
       if (editingId) {
-        // Update servizio
-        const { error: servizioError } = await supabase
+        // Update
+        const { error } = await supabase
           .from('servizi')
-          .update({
-            nome: formData.nome,
-            tipo: formData.tipo,
-            descrizione: formData.descrizione,
-            prezzo_base: formData.prezzo_base,
-            attivo: formData.attivo,
-            immagine_url: formData.immagine_url || null
-          })
+          .update(dataToSave)
           .eq('id', editingId)
 
-        if (servizioError) throw servizioError
+        if (error) throw error
 
-        // Update prezzi categoria
-        await salvaPrezziCategoria(editingId)
+        // Aggiorna prezzi categoria
+        await updatePrezziCategoria(editingId)
 
         toast.success('Servizio aggiornato!')
       } else {
-        // Create servizio
-        const { data: newServizio, error: servizioError } = await supabase
+        // Insert
+        const { data, error } = await supabase
           .from('servizi')
-          .insert([{
-            nome: formData.nome,
-            tipo: formData.tipo,
-            descrizione: formData.descrizione,
-            prezzo_base: formData.prezzo_base,
-            attivo: formData.attivo,
-            immagine_url: formData.immagine_url || null
-          }])
+          .insert([dataToSave])
           .select()
           .single()
 
-        if (servizioError) throw servizioError
+        if (error) throw error
 
-        // Insert prezzi categoria
-        await salvaPrezziCategoria(newServizio.id)
+        // Inserisci prezzi categoria
+        await updatePrezziCategoria(data.id)
 
         toast.success('Servizio creato!')
       }
@@ -208,51 +232,56 @@ export default function ServiziPage() {
       setShowModal(false)
       loadData()
     } catch (error: any) {
-      console.error('Errore salvataggio:', error)
+      console.error('Errore:', error)
       toast.error(error.message || 'Errore nel salvataggio')
     }
   }
 
-  async function salvaPrezziCategoria(servizioId: string) {
-    // Elimina prezzi esistenti
-    await supabase
-      .from('servizi_prezzi_categoria')
-      .delete()
-      .eq('servizio_id', servizioId)
-
-    // Inserisci nuovi prezzi (solo se compilati)
-    const prezziDaInserire = []
-
-    if (prezziCategoria.simple && parseFloat(prezziCategoria.simple) > 0) {
-      prezziDaInserire.push({
-        servizio_id: servizioId,
-        categoria: 'simple',
-        prezzo: parseFloat(prezziCategoria.simple)
-      })
-    }
-
-    if (prezziCategoria.premium && parseFloat(prezziCategoria.premium) > 0) {
-      prezziDaInserire.push({
-        servizio_id: servizioId,
-        categoria: 'premium',
-        prezzo: parseFloat(prezziCategoria.premium)
-      })
-    }
-
-    if (prezziCategoria.luxury && parseFloat(prezziCategoria.luxury) > 0) {
-      prezziDaInserire.push({
-        servizio_id: servizioId,
-        categoria: 'luxury',
-        prezzo: parseFloat(prezziCategoria.luxury)
-      })
-    }
-
-    if (prezziDaInserire.length > 0) {
-      const { error } = await supabase
+  async function updatePrezziCategoria(servizioId: string) {
+    try {
+      // Elimina prezzi esistenti
+      await supabase
         .from('servizi_prezzi_categoria')
-        .insert(prezziDaInserire)
+        .delete()
+        .eq('servizio_id', servizioId)
 
-      if (error) throw error
+      // Inserisci nuovi prezzi se valorizzati
+      const prezziDaInserire = []
+      
+      if (prezziCategoria.simple && parseFloat(prezziCategoria.simple) > 0) {
+        prezziDaInserire.push({
+          servizio_id: servizioId,
+          categoria: 'simple',
+          prezzo: parseFloat(prezziCategoria.simple)
+        })
+      }
+
+      if (prezziCategoria.premium && parseFloat(prezziCategoria.premium) > 0) {
+        prezziDaInserire.push({
+          servizio_id: servizioId,
+          categoria: 'premium',
+          prezzo: parseFloat(prezziCategoria.premium)
+        })
+      }
+
+      if (prezziCategoria.luxury && parseFloat(prezziCategoria.luxury) > 0) {
+        prezziDaInserire.push({
+          servizio_id: servizioId,
+          categoria: 'luxury',
+          prezzo: parseFloat(prezziCategoria.luxury)
+        })
+      }
+
+      if (prezziDaInserire.length > 0) {
+        const { error } = await supabase
+          .from('servizi_prezzi_categoria')
+          .insert(prezziDaInserire)
+
+        if (error) throw error
+      }
+    } catch (error) {
+      console.error('Errore aggiornamento prezzi:', error)
+      throw error
     }
   }
 
@@ -270,40 +299,49 @@ export default function ServiziPage() {
       toast.success('Servizio eliminato!')
       loadData()
     } catch (error: any) {
-      console.error('Errore eliminazione:', error)
+      console.error('Errore:', error)
       toast.error('Errore nell\'eliminazione')
     }
   }
 
+  // Helper per formattare durata
+  function formatDurata(minuti: number): string {
+    if (!minuti) return '-'
+    const ore = Math.floor(minuti / 60)
+    const min = minuti % 60
+    if (ore > 0 && min > 0) return `${ore}h ${min}m`
+    if (ore > 0) return `${ore}h`
+    return `${min}m`
+  }
+
   if (loading) {
     return (
-      <div className="p-8">
-        <div className="text-gray-600">Caricamento servizi...</div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-lg">Caricamento...</div>
       </div>
     )
   }
 
   return (
-    <div className="p-4 md:p-8">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+    <div className="p-8 max-w-7xl mx-auto">
+      <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Servizi</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Servizi</h1>
           <p className="text-gray-600 mt-1">Gestisci tour e servizi offerti</p>
         </div>
         <button
           onClick={handleNew}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
         >
           + Nuovo Servizio
         </button>
       </div>
 
       {/* Lista Servizi */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-        {servizi.map((servizio) => (
-          <div key={servizio.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            {/* Immagine Servizio */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {servizi.map(servizio => (
+          <div key={servizio.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+            {/* Immagine */}
             {servizio.immagine_url && (
               <div className="relative h-48 w-full bg-gray-100">
                 <Image
@@ -315,97 +353,111 @@ export default function ServiziPage() {
               </div>
             )}
 
-            {/* Header Card */}
-            <div className="p-6 border-b border-gray-100">
-              <div className="flex items-start justify-between mb-2">
-                <h3 className="text-xl font-bold text-gray-900">{servizio.nome}</h3>
+            <div className="p-6">
+              {/* Badge tipo */}
+              <div className="flex items-center gap-2 mb-3">
+                <span className={`px-3 py-1 text-xs font-medium rounded-full ${
+                  servizio.tipo === 'tour' ? 'bg-blue-100 text-blue-700' :
+                  servizio.tipo === 'locazione' ? 'bg-green-100 text-green-700' :
+                  'bg-purple-100 text-purple-700'
+                }`}>
+                  {servizio.tipo === 'tour' ? 'Tour' : servizio.tipo === 'locazione' ? 'Noleggio' : 'Taxi Mare'}
+                </span>
                 <span className={`px-2 py-1 text-xs rounded-full ${
-                  servizio.attivo 
-                    ? 'bg-green-100 text-green-700' 
-                    : 'bg-gray-100 text-gray-700'
+                  servizio.attivo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
                 }`}>
                   {servizio.attivo ? 'Attivo' : 'Inattivo'}
                 </span>
               </div>
-              <p className="text-sm text-gray-500 capitalize">{servizio.tipo}</p>
+
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                {servizio.nome}
+              </h3>
+
               {servizio.descrizione && (
-                <p className="text-sm text-gray-600 mt-3 line-clamp-2">
+                <p className="text-sm text-gray-600 mb-4 line-clamp-2">
                   {servizio.descrizione}
                 </p>
               )}
-            </div>
 
-            {/* Prezzi per Categoria */}
-            <div className="p-6 bg-gray-50">
-              <h4 className="text-sm font-semibold text-gray-700 mb-3">Prezzi per Categoria</h4>
-              <div className="space-y-2">
-                {/* Simple */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-green-500"></span>
-                    <span className="text-sm text-gray-700">Simple</span>
-                  </div>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {servizio.prezzi_categoria?.simple 
-                      ? `€${servizio.prezzi_categoria.simple.toLocaleString()}` 
-                      : '-'}
-                  </span>
+              {/* Durata */}
+              {servizio.durata_minuti > 0 && (
+                <div className="flex items-center gap-2 text-sm text-gray-700 mb-2">
+                  <span>⏱</span>
+                  <span>{formatDurata(servizio.durata_minuti)}</span>
                 </div>
+              )}
 
-                {/* Premium */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
-                    <span className="text-sm text-gray-700">Premium</span>
-                  </div>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {servizio.prezzi_categoria?.premium 
-                      ? `€${servizio.prezzi_categoria.premium.toLocaleString()}` 
-                      : '-'}
-                  </span>
+              {/* Luogo imbarco */}
+              {servizio.luogo_imbarco && (
+                <div className="flex items-center gap-2 text-sm text-gray-700 mb-2">
+                  <span>📍</span>
+                  <span>{servizio.luogo_imbarco}</span>
                 </div>
+              )}
 
-                {/* Luxury */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-purple-500"></span>
-                    <span className="text-sm text-gray-700">Luxury</span>
-                  </div>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {servizio.prezzi_categoria?.luxury 
-                      ? `€${servizio.prezzi_categoria.luxury.toLocaleString()}` 
-                      : '-'}
-                  </span>
+              {/* Orario imbarco */}
+              {servizio.ora_imbarco && (
+                <div className="flex items-center gap-2 text-sm text-gray-700 mb-2">
+                  <span>🕐</span>
+                  <span>{servizio.ora_imbarco}</span>
                 </div>
+              )}
 
-                {/* Prezzo Base (fallback) */}
-                {!servizio.prezzi_categoria?.simple && 
-                 !servizio.prezzi_categoria?.premium && 
-                 !servizio.prezzi_categoria?.luxury && (
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <span className="text-sm text-gray-700">Prezzo Base</span>
-                    <span className="text-sm font-semibold text-gray-900">
-                      €{servizio.prezzo_base?.toLocaleString() || 0}
-                    </span>
-                  </div>
-                )}
+              {/* Prezzi per Categoria */}
+              <div className="border-t border-gray-100 pt-4 mt-4">
+                <h4 className="text-xs font-semibold text-gray-700 mb-2">Prezzi per Categoria</h4>
+                <div className="space-y-1">
+                  {servizio.prezzi_categoria.simple && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                        Simple
+                      </span>
+                      <span className="font-semibold">€{servizio.prezzi_categoria.simple}</span>
+                    </div>
+                  )}
+                  {servizio.prezzi_categoria.premium && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
+                        Premium
+                      </span>
+                      <span className="font-semibold">€{servizio.prezzi_categoria.premium}</span>
+                    </div>
+                  )}
+                  {servizio.prezzi_categoria.luxury && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-purple-500"></span>
+                        Luxury
+                      </span>
+                      <span className="font-semibold">€{servizio.prezzi_categoria.luxury}</span>
+                    </div>
+                  )}
+                  {!servizio.prezzi_categoria.simple && !servizio.prezzi_categoria.premium && !servizio.prezzi_categoria.luxury && (
+                    <div className="text-sm text-gray-600">
+                      Prezzo base: €{servizio.prezzo_base || 0}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
 
-            {/* Actions */}
-            <div className="p-4 bg-white border-t border-gray-100 flex gap-2">
-              <button
-                onClick={() => handleEdit(servizio)}
-                className="flex-1 px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-              >
-                Modifica
-              </button>
-              <button
-                onClick={() => handleDelete(servizio.id)}
-                className="px-4 py-2 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100"
-              >
-                Elimina
-              </button>
+              {/* Actions */}
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => handleEdit(servizio)}
+                  className="flex-1 px-4 py-2 text-sm bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+                >
+                  Modifica
+                </button>
+                <button
+                  onClick={() => handleDelete(servizio.id)}
+                  className="px-4 py-2 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100"
+                >
+                  Elimina
+                </button>
+              </div>
             </div>
           </div>
         ))}
@@ -506,6 +558,7 @@ export default function ServiziPage() {
                   <option value="tour">Tour</option>
                   <option value="locazione">Noleggio</option>
                   <option value="taxi_mare">Taxi Mare</option>
+                  <option value="tour_collettivo">Tour Collettivo</option>
                 </select>
               </div>
 
@@ -520,6 +573,75 @@ export default function ServiziPage() {
                   rows={4}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              {/* Durata - Ore e Minuti */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Durata
+                </label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Ore</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="24"
+                      value={formData.durata_ore}
+                      onChange={(e) => setFormData(prev => ({ ...prev, durata_ore: parseInt(e.target.value) || 0 }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Minuti</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="59"
+                      value={formData.durata_minuti}
+                      onChange={(e) => setFormData(prev => ({ ...prev, durata_minuti: parseInt(e.target.value) || 0 }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Esempio: 7 ore 30 minuti
+                </p>
+              </div>
+
+              {/* Luogo d'Imbarco */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Luogo d'Imbarco
+                </label>
+                <select
+                  value={formData.luogo_imbarco}
+                  onChange={(e) => setFormData(prev => ({ ...prev, luogo_imbarco: e.target.value }))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Seleziona porto...</option>
+                  {portiImbarco.map(porto => (
+                    <option key={porto} value={porto}>{porto}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Orario d'Imbarco */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Orario d'Imbarco
+                </label>
+                <input
+                  type="time"
+                  value={formData.ora_imbarco}
+                  onChange={(e) => setFormData(prev => ({ ...prev, ora_imbarco: e.target.value }))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Formato 24h (es. 09:00, 14:30)
+                </p>
               </div>
 
               {/* Prezzo Base */}
@@ -603,29 +725,30 @@ export default function ServiziPage() {
               <div className="flex items-center gap-3">
                 <input
                   type="checkbox"
+                  id="attivo"
                   checked={formData.attivo}
                   onChange={(e) => setFormData(prev => ({ ...prev, attivo: e.target.checked }))}
-                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
                 />
-                <label className="text-sm font-medium text-gray-700">
+                <label htmlFor="attivo" className="text-sm font-medium text-gray-700">
                   Servizio attivo
                 </label>
               </div>
 
-              {/* Actions */}
-              <div className="flex gap-3 pt-4 border-t border-gray-200">
+              {/* Buttons */}
+              <div className="flex gap-3 pt-6 border-t border-gray-200">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                  className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                 >
                   Annulla
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
-                  {editingId ? 'Salva Modifiche' : 'Crea Servizio'}
+                  {editingId ? 'Aggiorna' : 'Crea'} Servizio
                 </button>
               </div>
             </form>

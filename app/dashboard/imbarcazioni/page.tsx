@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import Image from 'next/image'
 
 export default function ImbarcazioniPage() {
   const [imbarcazioni, setImbarcazioni] = useState<any[]>([])
@@ -34,6 +35,19 @@ export default function ImbarcazioniPage() {
 
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+
+  // 🆕 FUNZIONE HELPER: Converti tipo DB in label visualizzato
+  const getTipoLabel = (tipo: string): string => {
+    const labels: {[key: string]: string} = {
+      'gommone': 'Gommone',
+      'barca': 'Barca',
+      'barca_vela': 'Barca a Vela',
+      'yacht': 'Yacht',
+      'catamarano': 'Catamarano',
+      'gozzo': 'Gozzo'
+    }
+    return labels[tipo] || tipo
+  }
 
   useEffect(() => {
     loadData()
@@ -99,7 +113,7 @@ export default function ImbarcazioniPage() {
             nome: sa.servizio_nome,
             tipo: sa.servizio_tipo,
             prezzo_base: sa.servizio_prezzo_base,
-            prezzo_finale: sa.prezzo_finale, // ← PREZZO DINAMICO
+            prezzo_finale: sa.prezzo_finale,
             prezzo_personalizzato: sa.prezzo_personalizzato
           }))
 
@@ -163,13 +177,24 @@ export default function ImbarcazioniPage() {
 
   function handleEdit(imbarcazione: any) {
     setEditingId(imbarcazione.id)
+    
+    // Converti array caratteristiche in stringa per il form
+    let caratteristicheString = ''
+    if (imbarcazione.caratteristiche) {
+      if (Array.isArray(imbarcazione.caratteristiche)) {
+        caratteristicheString = imbarcazione.caratteristiche.join(', ')
+      } else {
+        caratteristicheString = imbarcazione.caratteristiche
+      }
+    }
+    
     setFormData({
       nome: imbarcazione.nome,
       tipo: imbarcazione.tipo,
       categoria: imbarcazione.categoria,
       capacita_massima: imbarcazione.capacita_massima,
       descrizione: imbarcazione.descrizione || '',
-      caratteristiche: imbarcazione.caratteristiche || '',
+      caratteristiche: caratteristicheString,
       immagine_principale: imbarcazione.immagine_principale || '',
       fornitore_id: imbarcazione.fornitore_id || '',
       attiva: imbarcazione.attiva
@@ -181,29 +206,46 @@ export default function ImbarcazioniPage() {
 
   function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if (file) {
-      setImageFile(file)
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string)
-      }
-      reader.readAsDataURL(file)
+    if (!file) return
+
+    // Validazione
+    if (!file.type.startsWith('image/')) {
+      toast.error('Il file deve essere un\'immagine')
+      return
     }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Immagine troppo grande (max 5MB)')
+      return
+    }
+
+    setImageFile(file)
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      setImagePreview(reader.result as string)
+    }
+    reader.readAsDataURL(file)
   }
 
   async function uploadImage(file: File): Promise<string> {
-    const fileName = `${Date.now()}-${file.name}`
+    const fileExt = file.name.split('.').pop()
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+    const filePath = `${fileName}`
+
     const { data, error } = await supabase.storage
       .from('imbarcazioni')
-      .upload(fileName, file)
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false
+      })
 
     if (error) throw error
 
-    const { data: urlData } = supabase.storage
+    const { data: { publicUrl } } = supabase.storage
       .from('imbarcazioni')
-      .getPublicUrl(fileName)
+      .getPublicUrl(filePath)
 
-    return urlData.publicUrl
+    return publicUrl
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -217,9 +259,30 @@ export default function ImbarcazioniPage() {
         imageUrl = await uploadImage(imageFile)
       }
 
+      // 🔧 FIX: Converti caratteristiche in array o null
+      const caratteristicheArray = (() => {
+        if (!formData.caratteristiche || formData.caratteristiche.trim() === '') {
+          return null
+        }
+        if (Array.isArray(formData.caratteristiche)) {
+          return formData.caratteristiche
+        }
+        return formData.caratteristiche
+          .split(/[,\n]/)
+          .map((c: string) => c.trim())
+          .filter((c: string) => c.length > 0)
+      })()
+
       const dataToSave = {
-        ...formData,
-        immagine_principale: imageUrl
+        nome: formData.nome,
+        tipo: formData.tipo,
+        categoria: formData.categoria,
+        capacita_massima: formData.capacita_massima || null,
+        descrizione: formData.descrizione || null,
+        caratteristiche: caratteristicheArray,
+        immagine_principale: imageUrl || null,
+        fornitore_id: formData.fornitore_id || null,
+        attiva: formData.attiva
       }
 
       if (editingId) {
@@ -271,7 +334,6 @@ export default function ImbarcazioniPage() {
   function openServiziModal(imbarcazione: any) {
     setSelectedImbarcazione(imbarcazione)
     
-    // Prepara checkbox stati
     const stati: {[key: string]: boolean} = {}
     imbarcazione.servizi_associati.forEach((s: any) => {
       stati[s.id] = true
@@ -296,20 +358,18 @@ export default function ImbarcazioniPage() {
     if (!selectedImbarcazione) return
 
     try {
-      // Rimuovi tutti i servizi esistenti
       await supabase
         .from('imbarcazioni_servizi')
         .delete()
         .eq('imbarcazione_id', selectedImbarcazione.id)
 
-      // Aggiungi servizi selezionati (senza prezzo, viene calcolato dinamicamente)
       const serviziDaInserire = Object.entries(serviziSelezionati)
         .filter(([_, isSelected]) => isSelected)
         .map(([servizioId]) => ({
           imbarcazione_id: selectedImbarcazione.id,
           servizio_id: servizioId,
           attivo: true,
-          prezzo_personalizzato: null // NULL = usa prezzo dinamico
+          prezzo_personalizzato: null
         }))
 
       if (serviziDaInserire.length > 0) {
@@ -374,7 +434,6 @@ export default function ImbarcazioniPage() {
       {/* Filtri */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Search */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Cerca</label>
             <input
@@ -386,7 +445,6 @@ export default function ImbarcazioniPage() {
             />
           </div>
 
-          {/* Fornitore */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Fornitore</label>
             <select
@@ -401,7 +459,6 @@ export default function ImbarcazioniPage() {
             </select>
           </div>
 
-          {/* Categoria */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Categoria</label>
             <select
@@ -454,10 +511,11 @@ export default function ImbarcazioniPage() {
               {/* Immagine */}
               {imbarcazione.immagine_principale && (
                 <div className="relative h-48 bg-gray-100">
-                  <img
+                  <Image
                     src={imbarcazione.immagine_principale}
                     alt={imbarcazione.nome}
-                    className="w-full h-full object-cover"
+                    fill
+                    className="object-cover"
                   />
                   <div className="absolute top-3 right-3 flex gap-2">
                     <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getCategoriaColor(imbarcazione.categoria)}`}>
@@ -477,7 +535,8 @@ export default function ImbarcazioniPage() {
                 <div className="mb-4">
                   <h3 className="text-xl font-bold text-gray-900 mb-1">{imbarcazione.nome}</h3>
                   <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <span className="capitalize">{imbarcazione.tipo}</span>
+                    {/* 🆕 USA getTipoLabel invece di capitalize */}
+                    <span>{getTipoLabel(imbarcazione.tipo)}</span>
                     {fornitore && (
                       <>
                         <span>•</span>
@@ -564,11 +623,12 @@ export default function ImbarcazioniPage() {
         </div>
       )}
 
-      {/* Modal Crea/Modifica Imbarcazione */}
+      {/* Modal Crea/Modifica - FIX HEADER */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-xl max-w-2xl w-full my-8">
-            <div className="p-6 border-b flex items-center justify-between sticky top-0 bg-white z-10">
+            {/* FIX: Header sticky con sfondo bianco e z-index */}
+            <div className="sticky top-0 z-10 bg-white p-6 border-b flex items-center justify-between rounded-t-xl">
               <h2 className="text-2xl font-bold text-gray-900">
                 {editingId ? 'Modifica Imbarcazione' : 'Nuova Imbarcazione'}
               </h2>
@@ -581,17 +641,58 @@ export default function ImbarcazioniPage() {
               {/* Immagine */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Immagine</label>
-                {imagePreview && (
-                  <div className="mb-3">
-                    <img src={imagePreview} alt="Preview" className="w-full h-48 object-cover rounded-lg" />
+                {imagePreview ? (
+                  <div className="relative mb-3">
+                    <div className="relative h-48 w-full rounded-lg overflow-hidden bg-gray-100">
+                      <Image
+                        src={imagePreview}
+                        alt="Preview"
+                        fill
+                        className="object-cover"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImageFile(null)
+                        setImagePreview(null)
+                        setFormData(prev => ({ ...prev, immagine_principale: '' }))
+                      }}
+                      className="absolute top-2 right-2 px-3 py-1 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700"
+                    >
+                      Rimuovi
+                    </button>
+                  </div>
+                ) : (
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageSelect}
+                      disabled={uploadingImage}
+                      className="hidden"
+                      id="image-upload"
+                    />
+                    <label
+                      htmlFor="image-upload"
+                      className={`cursor-pointer ${uploadingImage ? 'opacity-50' : ''}`}
+                    >
+                      <div className="text-gray-600">
+                        {uploadingImage ? (
+                          <span>⏳ Caricamento...</span>
+                        ) : (
+                          <>
+                            <span className="text-4xl mb-2 block">📷</span>
+                            <span className="text-sm">Click per caricare immagine</span>
+                            <span className="text-xs text-gray-500 block mt-1">
+                              JPG, PNG, WebP (max 5MB)
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </label>
                   </div>
                 )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageSelect}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
               </div>
 
               {/* Info Base */}
@@ -607,6 +708,7 @@ export default function ImbarcazioniPage() {
                   />
                 </div>
 
+                {/* 🆕 FIX: "Barca" → "Natante" e aggiunto "Barca a Vela" */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Tipo</label>
                   <select
@@ -615,7 +717,8 @@ export default function ImbarcazioniPage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   >
                     <option value="gommone">Gommone</option>
-                    <option value="barca">Barca</option>
+                    <option value="barca">Natante</option>
+                    <option value="barca_vela">Barca a Vela</option>
                     <option value="yacht">Yacht</option>
                     <option value="catamarano">Catamarano</option>
                     <option value="gozzo">Gozzo</option>
@@ -641,7 +744,7 @@ export default function ImbarcazioniPage() {
                   <input
                     type="number"
                     value={formData.capacita_massima}
-                    onChange={(e) => setFormData({ ...formData, capacita_massima: parseInt(e.target.value) })}
+                    onChange={(e) => setFormData({ ...formData, capacita_massima: parseInt(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     min="1"
                   />
@@ -679,8 +782,11 @@ export default function ImbarcazioniPage() {
                   onChange={(e) => setFormData({ ...formData, caratteristiche: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   rows={2}
-                  placeholder="Es: Tendalino, doccetta, igloo con ghiaccio..."
+                  placeholder="Separa con virgole: Tendalino, doccetta, igloo con ghiaccio"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Separa le caratteristiche con virgole
+                </p>
               </div>
 
               <div className="flex items-center gap-3">
@@ -719,7 +825,7 @@ export default function ImbarcazioniPage() {
         </div>
       )}
 
-      {/* Modal Gestione Servizi */}
+      {/* Modal Gestione Servizi - INVARIATO */}
       {showServiziModal && selectedImbarcazione && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
@@ -775,7 +881,6 @@ export default function ImbarcazioniPage() {
                           </div>
                           <p className="text-sm text-gray-600 capitalize">{servizio.tipo}</p>
                           
-                          {/* Mostra tutti i prezzi per riferimento */}
                           <div className="mt-2 flex gap-3 text-xs">
                             {servizio.prezzi_categoria.simple && (
                               <span className="text-gray-500">
