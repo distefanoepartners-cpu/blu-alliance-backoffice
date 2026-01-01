@@ -1,13 +1,16 @@
 /**
- * BLU ALLIANCE CHATBOT API V4.0
+ * BLU ALLIANCE CHATBOT API V4.1
  * File: app/api/chatbot/query/route.ts
  * 
- * Features V4:
+ * Features V4.1:
  * - Conversational funnel step-by-step
  * - Resend email integration
  * - Supabase lead + conversation tracking
  * - Email notifica admin + preventivo cliente
  * - CORS configurato
+ * - SMART DETECTION migliorata (noleggiare, barca, etc.)
+ * - FALLBACK intelligenti per dati mancanti
+ * - Detection orari e date automatica
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -230,8 +233,24 @@ function buildContextFromState(state: SessionState): string {
 }
 
 function getPricing(service: string, destination?: string) {
-  const key = destination ? `tour_${destination.toLowerCase()}` : service.toLowerCase();
-  return PRICING[key as keyof typeof PRICING] || PRICING['noleggio'];
+  // Normalizza servizio
+  const normalizedService = service?.toLowerCase() || 'noleggio';
+  
+  // Se c'è destinazione, prova con tour specifico
+  if (destination) {
+    const key = `tour_${destination.toLowerCase()}`;
+    if (PRICING[key as keyof typeof PRICING]) {
+      return PRICING[key as keyof typeof PRICING];
+    }
+  }
+  
+  // Altrimenti usa il servizio
+  if (PRICING[normalizedService as keyof typeof PRICING]) {
+    return PRICING[normalizedService as keyof typeof PRICING];
+  }
+  
+  // Fallback finale: noleggio
+  return PRICING['noleggio'];
 }
 
 // ============================================
@@ -484,23 +503,61 @@ export async function POST(request: NextRequest) {
     sessionState.step += 1;
     const lowerMsg = message.toLowerCase();
     
-    // Detect service
-    if (lowerMsg.includes('tour') && !sessionState.service) sessionState.service = 'tour';
-    else if (lowerMsg.includes('noleggio') && !sessionState.service) sessionState.service = 'noleggio';
-    else if (lowerMsg.includes('taxi')) sessionState.service = 'taxi';
+    // Detect service - MIGLIORATO V4.1
+    if (!sessionState.service) {
+      if (lowerMsg.includes('tour') || lowerMsg.includes('organizzat')) {
+        sessionState.service = 'tour';
+      } else if (lowerMsg.includes('noleggio') || lowerMsg.includes('noleggi') || 
+                 lowerMsg.includes('barca') || lowerMsg.includes('affitt')) {
+        sessionState.service = 'noleggio';
+      } else if (lowerMsg.includes('taxi') || lowerMsg.includes('trasferiment')) {
+        sessionState.service = 'taxi';
+      }
+    }
     
     // Detect destination
-    if (lowerMsg.includes('capri')) sessionState.destination = 'Capri';
-    else if (lowerMsg.includes('amalfi')) sessionState.destination = 'Amalfi';
-    else if (lowerMsg.includes('cilento')) sessionState.destination = 'Cilento';
+    if (!sessionState.destination) {
+      if (lowerMsg.includes('capri')) {
+        sessionState.destination = 'Capri';
+      } else if (lowerMsg.includes('amalfi') || lowerMsg.includes('positano') || lowerMsg.includes('praiano')) {
+        sessionState.destination = 'Amalfi';
+      } else if (lowerMsg.includes('cilento') || lowerMsg.includes('palinuro') || lowerMsg.includes('acciaroli')) {
+        sessionState.destination = 'Cilento';
+      }
+    }
+    
+    // Detect date
+    if (!sessionState.date) {
+      if (lowerMsg.includes('oggi')) sessionState.date = 'oggi';
+      else if (lowerMsg.includes('domani')) sessionState.date = 'domani';
+      else if (lowerMsg.includes('weekend')) sessionState.date = 'weekend';
+    }
+    
+    // Detect time
+    if (!sessionState.time) {
+      if (lowerMsg.includes('mattina') || lowerMsg.includes('9')) sessionState.time = 'mattina';
+      else if (lowerMsg.includes('pomeriggio') || lowerMsg.includes('14')) sessionState.time = 'pomeriggio';
+      else if (lowerMsg.includes('tramonto') || lowerMsg.includes('17')) sessionState.time = 'tramonto';
+      // Also detect time ranges like "9-15"
+      const timeRange = message.match(/(\d+)\s*-\s*(\d+)/);
+      if (timeRange) sessionState.time = `${timeRange[1]}:00-${timeRange[2]}:00`;
+    }
     
     // Detect people
     const peopleMatch = message.match(/(\d+)/);
-    if (peopleMatch && !sessionState.people) sessionState.people = parseInt(peopleMatch[1]);
+    if (peopleMatch && !sessionState.people) {
+      sessionState.people = parseInt(peopleMatch[1]);
+    }
 
     // Handle email trigger
     let leadId = null;
     if (emailTrigger) {
+      // FALLBACK INTELLIGENTI - Se mancano dati, imposta default
+      const finalService = sessionState.service || 'noleggio';
+      const finalDestination = sessionState.destination || 'Costiera Amalfitana';
+      const finalData = sessionState.date || 'da definire';
+      const finalOrario = sessionState.time || 'da definire';
+      
       // Save to Supabase
       const { data: lead, error: leadError } = await supabase
         .from('chatbot_leads')
@@ -508,11 +565,11 @@ export async function POST(request: NextRequest) {
           nome: emailTrigger.nome,
           email: emailTrigger.email,
           telefono: emailTrigger.telefono,
-          servizio: sessionState.service,
-          destinazione: sessionState.destination,
-          data: sessionState.date,
-          persone: sessionState.people,
-          orario: sessionState.time,
+          servizio: finalService,
+          destinazione: finalDestination,
+          data: finalData,
+          persone: sessionState.people || 4,
+          orario: finalOrario,
           stato: 'nuovo',
           preventivo_inviato: true,
           preventivo_inviato_at: new Date().toISOString()
@@ -537,19 +594,19 @@ export async function POST(request: NextRequest) {
             nome: emailTrigger.nome,
             email: emailTrigger.email,
             telefono: emailTrigger.telefono,
-            servizio: sessionState.service,
-            destinazione: sessionState.destination,
-            data: sessionState.date,
-            persone: sessionState.people,
-            orario: sessionState.time
+            servizio: finalService,
+            destinazione: finalDestination,
+            data: finalData,
+            persone: sessionState.people || 4,
+            orario: finalOrario
           }),
           sendClientQuote({
             nome: emailTrigger.nome,
             email: emailTrigger.email,
-            servizio: sessionState.service,
-            destinazione: sessionState.destination,
-            data: sessionState.date,
-            persone: sessionState.people
+            servizio: finalService,
+            destinazione: finalDestination,
+            data: finalData,
+            persone: sessionState.people || 4
           }, leadId)
         ]);
 
@@ -559,7 +616,7 @@ export async function POST(request: NextRequest) {
             lead_id: leadId,
             tipo: 'notifica_admin',
             destinatario: 'info@blualliancegroup.com',
-            oggetto: `Nuova richiesta preventivo - ${sessionState.service}`,
+            oggetto: `Nuova richiesta preventivo - ${finalService}`,
             resend_id: adminEmailId,
             stato: 'inviata'
           });
@@ -612,7 +669,7 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     status: 'ok',
-    service: 'Blu Alliance Chatbot API v4.0 - Email + Lead Tracking',
+    service: 'Blu Alliance Chatbot API v4.1 - Email + Lead Tracking + Smart Detection',
     timestamp: new Date().toISOString()
   }, { headers: corsHeaders });
 }
