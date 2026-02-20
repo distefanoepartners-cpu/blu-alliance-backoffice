@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { UserContext } from '@/lib/user-context'
 
 export default function DashboardLayout({
   children,
@@ -14,6 +15,7 @@ export default function DashboardLayout({
   const pathname = usePathname()
   const [user, setUser] = useState<any>(null)
   const [userRole, setUserRole] = useState<string>('operatore')
+  const [fornitoreId, setFornitoreId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -35,13 +37,16 @@ export default function DashboardLayout({
     if (session.user.email) {
       const { data: adminData } = await supabase
         .from('amministratori')
-        .select('ruolo')
+        .select('ruolo, fornitore_id')
         .ilike('email', session.user.email)
         .eq('attivo', true)
         .maybeSingle()
 
       if (adminData && adminData.ruolo) {
         setUserRole(adminData.ruolo)
+      }
+      if (adminData?.fornitore_id) {
+        setFornitoreId(adminData.fornitore_id)
       }
     }
 
@@ -57,11 +62,10 @@ export default function DashboardLayout({
   const allMenuItems = [
   { href: '/dashboard/disponibilita', label: 'Planning', icon: '📅', roles: ['admin', 'operatore'] },
   { href: '/dashboard/statistiche', label: 'Statistiche', icon: '📈', roles: ['admin'] },
-  { href: '/dashboard/prenotazioni', label: 'Prenotazioni', icon: '📋', roles: ['admin', 'operatore'] },
-  { href: '/dashboard/calendario', label: 'Calendario', icon: '🗓️', roles: ['admin', 'operatore'] },
-  { href: '/dashboard/blocchi', label: 'Blocchi', icon: '🚫', roles: ['admin', 'operatore'] },
-  { href: '/dashboard/clienti', label: 'Clienti', icon: '👥', roles: ['admin', 'operatore'] },
-  { href: '/dashboard/chatbot-leads', label: 'Lead Chatbot', icon: '💬', roles: ['admin', 'operatore'] },
+  { href: '/dashboard/prenotazioni', label: 'Prenotazioni', icon: '📋', roles: ['admin'] },
+  { href: '/dashboard/blocchi', label: 'Blocchi', icon: '🚫', roles: ['admin'] },
+  { href: '/dashboard/clienti', label: 'Clienti', icon: '👥', roles: ['admin'] },
+  { href: '/dashboard/chatbot-leads', label: 'Lead Chatbot', icon: '💬', roles: ['admin'] },
   { href: '/dashboard/servizi', label: 'Servizi', icon: '🎯', roles: ['admin'] },
   { href: '/dashboard/imbarcazioni', label: 'Imbarcazioni', icon: '🚤', roles: ['admin'] },
   { href: '/dashboard/fornitori', label: 'Fornitori', icon: '🏢', roles: ['admin'] },
@@ -267,9 +271,16 @@ export default function DashboardLayout({
       )}
 
       {/* Main Content */}
-      <main className="md:ml-64 pt-16 md:pt-0">
-        {children}
-      </main>
+      <UserContext.Provider value={{
+        role: userRole,
+        fornitoreId: fornitoreId,
+        userId: user?.id || null,
+        userEmail: user?.email || null,
+      }}>
+        <main className="md:ml-64 pt-16 md:pt-0">
+          {children}
+        </main>
+      </UserContext.Provider>
     </div>
   )
 }

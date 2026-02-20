@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import toast from 'react-hot-toast'
+import BookingModal from '@/components/BookingModal'
 
 export default function PrenotazioniPage() {
   const router = useRouter()
@@ -21,6 +22,11 @@ export default function PrenotazioniPage() {
   const [editingPrenotazione, setEditingPrenotazione] = useState<any>(null)
   const [emailPrenotazione, setEmailPrenotazione] = useState<any>(null)
   const [sendingEmail, setSendingEmail] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deletingPrenotazione, setDeletingPrenotazione] = useState<any>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [showBookingModal, setShowBookingModal] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -103,7 +109,7 @@ export default function PrenotazioniPage() {
 
   function handleEdit(prenotazione: any) {
     setEditingPrenotazione(prenotazione)
-    setShowModal(true)
+    setShowBookingModal(true)
   }
 
   async function handleSavePrenotazione() {
@@ -186,6 +192,42 @@ export default function PrenotazioniPage() {
     }
   }
 
+  function handleOpenDeleteModal(prenotazione: any) {
+    setDeletingPrenotazione(prenotazione)
+    setDeleteConfirmText('')
+    setShowDeleteModal(true)
+  }
+
+  async function handleDeletePrenotazione() {
+    if (!deletingPrenotazione) return
+    if (deleteConfirmText !== 'ELIMINA') {
+      toast.error('Digita ELIMINA per confermare')
+      return
+    }
+
+    try {
+      setDeleting(true)
+
+      const { error } = await supabase
+        .from('prenotazioni')
+        .delete()
+        .eq('id', deletingPrenotazione.id)
+
+      if (error) throw error
+
+      toast.success('Prenotazione eliminata definitivamente!')
+      setShowDeleteModal(false)
+      setDeletingPrenotazione(null)
+      setDeleteConfirmText('')
+      loadData()
+    } catch (error: any) {
+      console.error('Errore eliminazione:', error)
+      toast.error("Errore nell'eliminazione della prenotazione")
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const getStatoColor = (stato: string) => {
     switch (stato) {
       case 'confermata': return 'bg-green-100 text-green-700'
@@ -246,9 +288,20 @@ export default function PrenotazioniPage() {
   return (
     <div className="p-4 md:p-8">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Prenotazioni</h1>
-        <p className="text-gray-600">Gestisci tutte le prenotazioni e i pagamenti</p>
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">Prenotazioni</h1>
+          <p className="text-gray-600">Gestisci tutte le prenotazioni e i pagamenti</p>
+        </div>
+        <button
+          onClick={() => {
+            setEditingPrenotazione(null)
+            setShowBookingModal(true)
+          }}
+          className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold text-sm shadow-sm"
+        >
+          ➕ Nuova Prenotazione
+        </button>
       </div>
 
       {/* Statistiche Ricavi */}
@@ -531,10 +584,10 @@ export default function PrenotazioniPage() {
                       {prenotazione.servizi?.nome}
                     </div>
                     <div className="text-sm text-gray-500">
-                      {prenotazione.imbarcazioni?.nome}
+                      {prenotazione.imbarcazioni?.nome || prenotazione.ns3000_boat_name || '—'}
                     </div>
                     <div className="text-xs text-gray-400 capitalize">
-                      {prenotazione.imbarcazioni?.categoria}
+                      {prenotazione.imbarcazioni?.categoria || (prenotazione.ns3000_boat_name ? '⛵ NS3000' : '')}
                     </div>
                   </td>
 
@@ -683,6 +736,13 @@ export default function PrenotazioniPage() {
                       >
                         📧
                       </button>
+                      <button 
+                        onClick={() => handleOpenDeleteModal(prenotazione)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" 
+                        title="Elimina"
+                      >
+                        🗑️
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -739,7 +799,7 @@ export default function PrenotazioniPage() {
                   <strong>{editingPrenotazione.servizi?.nome}</strong>
                 </p>
                 <p className="text-sm text-gray-600">
-                  {editingPrenotazione.imbarcazioni?.nome} • {editingPrenotazione.imbarcazioni?.categoria}
+                  {editingPrenotazione.imbarcazioni?.nome || editingPrenotazione.ns3000_boat_name || 'N/A'} • {editingPrenotazione.imbarcazioni?.categoria || (editingPrenotazione.ns3000_boat_name ? 'NS3000' : '')}
                 </p>
               </div>
 
@@ -1079,7 +1139,7 @@ export default function PrenotazioniPage() {
                   </div>
                   <div>
                     <span className="text-gray-600">Imbarcazione:</span>
-                    <p className="font-medium">{emailPrenotazione.imbarcazioni?.nome}</p>
+                    <p className="font-medium">{emailPrenotazione.imbarcazioni?.nome || emailPrenotazione.ns3000_boat_name || 'N/A'}</p>
                   </div>
                   <div>
                     <span className="text-gray-600">Importo:</span>
@@ -1146,6 +1206,115 @@ export default function PrenotazioniPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Conferma Eliminazione */}
+      {showDeleteModal && deletingPrenotazione && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full">
+            <div className="p-6 border-b">
+              <h2 className="text-2xl font-bold text-red-600">⚠️ Elimina Prenotazione</h2>
+              <p className="text-sm text-gray-600 mt-1">{deletingPrenotazione.codice_prenotazione}</p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Warning */}
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-sm font-semibold text-red-800 mb-2">
+                  Questa azione è irreversibile!
+                </p>
+                <p className="text-sm text-red-700">
+                  La prenotazione verrà eliminata definitivamente dal sistema, inclusi tutti i dati di pagamento associati.
+                </p>
+              </div>
+
+              {/* Info Prenotazione */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-gray-600">Cliente:</span>
+                    <p className="font-medium">{deletingPrenotazione.clienti?.nome} {deletingPrenotazione.clienti?.cognome}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Data:</span>
+                    <p className="font-medium">
+                      {format(new Date(deletingPrenotazione.data_servizio), 'dd MMM yyyy', { locale: it })}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Servizio:</span>
+                    <p className="font-medium">{deletingPrenotazione.servizi?.nome}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Importo:</span>
+                    <p className="font-medium">€{deletingPrenotazione.prezzo_totale?.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Conferma digitando ELIMINA */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Digita <span className="font-bold text-red-600">ELIMINA</span> per confermare
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="ELIMINA"
+                  className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="p-6 border-t bg-gray-50 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false)
+                  setDeletingPrenotazione(null)
+                  setDeleteConfirmText('')
+                }}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-white disabled:opacity-50"
+              >
+                Annulla
+              </button>
+              <button
+                onClick={handleDeletePrenotazione}
+                disabled={deleting || deleteConfirmText !== 'ELIMINA'}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {deleting ? (
+                  <>
+                    <span className="animate-spin">⏳</span>
+                    Eliminazione...
+                  </>
+                ) : (
+                  <>
+                    🗑️ Elimina Definitivamente
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BookingModal per creazione e modifica */}
+      <BookingModal
+        isOpen={showBookingModal}
+        onClose={() => {
+          setShowBookingModal(false)
+          setEditingPrenotazione(null)
+        }}
+        onSave={() => {
+          loadData()
+          setShowBookingModal(false)
+          setEditingPrenotazione(null)
+        }}
+        prenotazione={editingPrenotazione}
+      />
     </div>
   )
 }
