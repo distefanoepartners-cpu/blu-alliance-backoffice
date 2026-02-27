@@ -716,14 +716,14 @@ export default function PrenotazioniPage() {
                         ✏️
                       </button>
                       <button 
-                        onClick={() => router.push(`/backoffice/prenotazioni/${prenotazione.id}`)}
+                        onClick={() => router.push(`/dashboard/prenotazioni/${prenotazione.id}`)}
                         className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg cursor-pointer transition-colors" 
                         title="Dettagli"
                       >
                         👁️
                       </button>
                       <button 
-                        onClick={() => router.push(`/backoffice/prenotazioni/${prenotazione.id}#pagamenti`)}
+                        onClick={() => router.push(`/dashboard/prenotazioni/${prenotazione.id}#pagamenti`)}
                         className="p-2 text-green-600 hover:bg-green-50 rounded-lg cursor-pointer transition-colors" 
                         title="Pagamenti"
                       >

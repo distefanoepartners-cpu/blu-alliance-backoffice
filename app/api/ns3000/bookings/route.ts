@@ -7,7 +7,7 @@ const NS3000_API_KEY = process.env.NS3000_API_KEY
 // Supabase Blu Alliance (per salvare copia locale)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
 // ============================================
@@ -58,10 +58,23 @@ export async function POST(request: Request) {
     // 1. Salva prima in locale su Blu Alliance
     const codicePrenotazione = `BA${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`
 
+    // Sanitizza UUID — valori vuoti o non-UUID vanno a null
+    const isValidUuid = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+    const safeUuid = (v: any) => isValidUuid(v) ? v : null
+
+    console.log('📦 [ns3000/bookings] body ricevuto:', JSON.stringify({
+      boat_id: body.boat_id,
+      cliente_id: body.cliente_id,
+      servizio_id: body.servizio_id,
+      booking_date: body.booking_date,
+      num_passengers: body.num_passengers,
+      price: body.price
+    }))
+
     const localBooking: any = {
       codice_prenotazione: codicePrenotazione,
-      cliente_id: body.cliente_id,
-      servizio_id: body.servizio_id || null,
+      cliente_id: safeUuid(body.cliente_id),
+      servizio_id: safeUuid(body.servizio_id),
       imbarcazione_id: null, // Barca NS3000, non locale
       data_servizio: body.booking_date,
       ora_inizio: body.ora_inizio || null,
@@ -73,11 +86,12 @@ export async function POST(request: Request) {
       lingua: body.lingua || 'it',
       // ⭐ Campi NS3000
       source: 'ns3000',
-      ns3000_boat_id: body.boat_id,
+      ns3000_boat_id: String(body.boat_id),
       ns3000_boat_name: body.boat_name || null,
       sync_status: 'pending'
     }
 
+    console.log('💾 [INSERT] localBooking:', JSON.stringify(localBooking))
     const { data: localData, error: localError } = await supabase
       .from('prenotazioni')
       .insert([localBooking])
@@ -119,6 +133,7 @@ export async function POST(request: Request) {
     )
 
     const ns3000Response = await res.json()
+    console.log('🌐 [NS3000 response] status:', res.status, '| body:', JSON.stringify(ns3000Response))
 
     if (!res.ok) {
       // NS3000 ha rifiutato — aggiorna locale con errore
@@ -137,15 +152,19 @@ export async function POST(request: Request) {
     }
 
     // 3. Aggiorna record locale con riferimento NS3000
+    const booking = ns3000Response.booking || {}
+    const updatePayload = {
+      ns3000_booking_id: booking.id != null ? String(booking.id) : null,
+      ns3000_booking_number: booking.booking_number != null ? String(booking.booking_number) : null,
+      ns3000_boat_name: booking.boat_name || null,
+      sync_status: 'synced',
+      last_synced_at: new Date().toISOString()
+    }
+    console.log('🔄 [UPDATE] NS3000 response booking:', JSON.stringify(booking))
+    console.log('🔄 [UPDATE] payload:', JSON.stringify(updatePayload))
     const { error: updateError } = await supabase
       .from('prenotazioni')
-      .update({
-        ns3000_booking_id: ns3000Response.booking.id,
-        ns3000_booking_number: ns3000Response.booking.booking_number,
-        ns3000_boat_name: ns3000Response.booking.boat_name,
-        sync_status: 'synced',
-        last_synced_at: new Date().toISOString()
-      })
+      .update(updatePayload)
       .eq('id', localData.id)
 
     if (updateError) {

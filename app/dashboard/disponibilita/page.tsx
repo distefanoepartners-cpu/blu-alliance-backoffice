@@ -12,6 +12,25 @@ export default function PlanningMensile() {
   const { role, fornitoreId } = useUserContext()
   const isOperatore = role === 'operatore'
 
+  // Dimensioni griglia responsive
+  const [colSizes, setColSizes] = useState({ barca: 120, giorno: 38, altezza: 42 })
+
+  useEffect(() => {
+    function updateSizes() {
+      const w = window.innerWidth
+      if (w < 640) {
+        setColSizes({ barca: 70, giorno: 26, altezza: 34 })       // mobile
+      } else if (w < 1024) {
+        setColSizes({ barca: 90, giorno: 32, altezza: 38 })        // tablet
+      } else {
+        setColSizes({ barca: 120, giorno: 38, altezza: 42 })       // desktop
+      }
+    }
+    updateSizes()
+    window.addEventListener('resize', updateSizes)
+    return () => window.removeEventListener('resize', updateSizes)
+  }, [])
+
   const [imbarcazioni, setImbarcazioni] = useState<any[]>([])
   const [imbarcazioniFiltrate, setImbarcazioniFiltrate] = useState<any[]>([])
   const [fornitori, setFornitori] = useState<any[]>([])
@@ -141,11 +160,22 @@ export default function PlanningMensile() {
     return { type: 'disponibile' }
   }
 
+  const [newBookingInitialNs3000BoatId, setNewBookingInitialNs3000BoatId] = useState('')
+  const [newBookingInitialNs3000BoatName, setNewBookingInitialNs3000BoatName] = useState('')
+
   function handleNs3000CellClick(boatId: string, boatName: string, date: Date) {
     const status = getNs3000CellStatus(boatId, date)
     if (status.booking) {
+      // Cella occupata: mostra dettagli
       setNs3000BookingDetail(status.booking)
       setShowNs3000Dettagli(true)
+    } else {
+      // Cella libera: apri BookingModal preimpostato su NS3000
+      setNewBookingInitialDate(format(date, 'yyyy-MM-dd'))
+      setNewBookingInitialNs3000BoatId(String(boatId))
+      setNewBookingInitialNs3000BoatName(boatName)
+      setNewBookingInitialImbarcazione('')
+      setShowNewBookingModal(true)
     }
   }
 
@@ -207,7 +237,8 @@ export default function PlanningMensile() {
     if (isOperatore && fornitoreId) {
       filtrate = filtrate.filter(b => b.fornitore_id === fornitoreId)
     }
-    if (showNs3000 && ns3000Boats.length > 0) {
+    // FIX: l'operatore non deve mai perdere le sue barche NS3000 dalla vista
+    if (!isOperatore && showNs3000 && ns3000Boats.length > 0) {
       filtrate = filtrate.filter(b => !baIdsInNs3000.has(b.id))
     }
     if (filtroFornitore !== 'tutti') {
@@ -392,7 +423,7 @@ export default function PlanningMensile() {
   }
 
   return (
-    <div className="p-2 md:p-4 lg:p-6 h-screen flex flex-col">
+    <div className="p-1 md:p-2 lg:p-3 h-screen flex flex-col">
 
       {/* ── HEADER ── */}
       <div className="mb-3 bg-gray-50 rounded-xl p-3 md:p-5">
@@ -597,13 +628,13 @@ export default function PlanningMensile() {
       {/* ── GRIGLIA MENSILE ── */}
       <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto overflow-y-auto h-full">
-          <table className="border-collapse" style={{ tableLayout: 'fixed', minWidth: `${80 + monthDays.length * 32}px` }}>
+          <table className="border-collapse" style={{ tableLayout: 'fixed', minWidth: `${colSizes.barca + monthDays.length * colSizes.giorno}px` }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-gray-50">
                 {/* Colonna nome barca */}
                 <th
-                  className="sticky left-0 z-20 bg-gray-100 border border-gray-200 px-1.5 py-2 text-left font-semibold text-gray-900 text-xs"
-                  style={{ width: '80px', minWidth: '80px' }}
+                  className="sticky left-0 z-20 bg-gray-100 border border-gray-200 px-2 py-2 text-left font-semibold text-gray-900 text-xs"
+                  style={{ width: `${colSizes.barca}px`, minWidth: `${colSizes.barca}px` }}
                 >
                   Flotta
                 </th>
@@ -621,7 +652,7 @@ export default function PlanningMensile() {
                           ? 'bg-orange-50 text-gray-700'
                           : 'text-gray-700'
                       }`}
-                      style={{ width: '32px', minWidth: '32px' }}
+                      style={{ width: `${colSizes.giorno}px`, minWidth: `${colSizes.giorno}px` }}
                     >
                       <div className="flex flex-col leading-tight">
                         <span className="text-[9px] font-normal text-gray-400 uppercase">
@@ -641,11 +672,11 @@ export default function PlanningMensile() {
                 <tr key={barca.id} className="hover:bg-gray-50/50">
                   {/* Nome barca */}
                   <td
-                    className="sticky left-0 z-[5] bg-gray-50 border border-gray-200 px-1.5 py-1"
-                    style={{ width: '80px', minWidth: '80px' }}
+                    className="sticky left-0 z-[5] bg-gray-50 border border-gray-200 px-2 py-1"
+                    style={{ width: `${colSizes.barca}px`, minWidth: `${colSizes.barca}px` }}
                   >
-                    <div className="text-xs font-semibold text-gray-900 truncate leading-tight">{barca.nome}</div>
-                    <div className="text-[10px] text-gray-400 truncate capitalize leading-tight">{barca.categoria}</div>
+                    <div className="text-xs font-semibold text-gray-900 truncate leading-tight" title={barca.nome}>{barca.nome}</div>
+                    <div className="text-[10px] text-gray-400 truncate capitalize leading-tight hidden sm:block">{barca.categoria}</div>
                   </td>
 
                   {/* Celle giorni */}
@@ -688,12 +719,12 @@ export default function PlanningMensile() {
                       <td
                         key={`${barca.id}-${day.toISOString()}`}
                         className="border border-gray-100 p-0"
-                        style={{ width: '32px', minWidth: '32px' }}
+                        style={{ width: `${colSizes.giorno}px`, minWidth: `${colSizes.giorno}px` }}
                       >
                         <button
                           onClick={(e) => handleCellClick(barca.id, barca.nome, day, e)}
                           className={`w-full flex flex-col items-center justify-center border-l-2 transition-all ${bgColor} ${borderColor} ${isToday ? 'ring-1 ring-inset ring-blue-300' : ''}`}
-                          style={{ height: '36px' }}
+                          style={{ height: `${colSizes.altezza}px` }}
                           title={
                             cellStatus.type === 'prenotazione'
                               ? `${cellStatus.data.codice_prenotazione} · ${cellStatus.data.numero_persone} pax`
@@ -714,12 +745,12 @@ export default function PlanningMensile() {
 
           {/* ── GRIGLIA NS3000 ── */}
           {!isOperatore && showNs3000 && ns3000Boats.length > 0 && (
-            <table className="border-collapse mt-0" style={{ tableLayout: 'fixed', minWidth: `${80 + monthDays.length * 32}px` }}>
-              <thead className="sticky top-0 z-10">
+            <table className="border-collapse mt-0" style={{ tableLayout: 'fixed', minWidth: `${colSizes.barca + monthDays.length * colSizes.giorno}px` }}>
+              <thead className="">
                 <tr className="bg-indigo-50">
                   <th
-                    className="sticky left-0 z-20 bg-indigo-100 border border-indigo-200 px-1.5 py-1.5 text-left font-semibold text-indigo-900 text-xs"
-                    style={{ width: '80px', minWidth: '80px' }}
+                    className="sticky left-0 z-20 bg-indigo-100 border border-indigo-200 px-2 py-1.5 text-left font-semibold text-indigo-900 text-xs"
+                    style={{ width: `${colSizes.barca}px`, minWidth: `${colSizes.barca}px` }}
                   >
                     <div className="flex items-center gap-1">⛵ NS3000</div>
                   </th>
@@ -727,7 +758,7 @@ export default function PlanningMensile() {
                     <th
                       key={`ns-h-${day.toISOString()}`}
                       className="border border-indigo-200 bg-indigo-50 py-1 text-center"
-                      style={{ width: '32px', minWidth: '32px' }}
+                      style={{ width: `${colSizes.giorno}px`, minWidth: `${colSizes.giorno}px` }}
                     >
                       <span className="text-[9px] text-indigo-400">{format(day, 'd')}</span>
                     </th>
@@ -736,10 +767,10 @@ export default function PlanningMensile() {
               </thead>
               <tbody>
                 {ns3000Boats.map((boat) => (
-                  <tr key={`ns-${boat.boat_id}`} className="hover:bg-indigo-50/30">
+                  <tr key={`ns-${boat.boat_id}`} className="hover:bg-indigo-50">
                     <td
-                      className="sticky left-0 z-[5] bg-indigo-50/50 border border-gray-200 px-1.5 py-1"
-                      style={{ width: '80px', minWidth: '80px' }}
+                      className="sticky left-0 z-[5] bg-indigo-50 border border-gray-200 px-2 py-1"
+                      style={{ width: `${colSizes.barca}px`, minWidth: `${colSizes.barca}px` }}
                     >
                       <div className="text-xs font-semibold text-indigo-900 truncate leading-tight">{boat.name}</div>
                       <div className="text-[10px] text-indigo-400 truncate leading-tight">{boat.boat_type} · {boat.max_passengers}p</div>
@@ -778,12 +809,12 @@ export default function PlanningMensile() {
                         <td
                           key={`ns-${boat.boat_id}-${day.toISOString()}`}
                           className="border border-gray-100 p-0"
-                          style={{ width: '32px', minWidth: '32px' }}
+                          style={{ width: `${colSizes.giorno}px`, minWidth: `${colSizes.giorno}px` }}
                         >
                           <button
                             onClick={() => handleNs3000CellClick(boat.boat_id, boat.name, day)}
                             className={`w-full flex flex-col items-center justify-center border-l-2 transition-all ${bgColor} ${borderColor} ${isToday ? 'ring-1 ring-inset ring-blue-300' : ''}`}
-                            style={{ height: '36px' }}
+                            style={{ height: `${colSizes.altezza}px` }}
                             title={
                               cellStatus.type === 'occupato'
                                 ? `Prenotata${cellStatus.booking ? ` · ${cellStatus.booking.customer_name} ${cellStatus.booking.customer_surname}` : ''}`
@@ -1088,6 +1119,9 @@ export default function PlanningMensile() {
         }}
         initialDate={newBookingInitialDate}
         initialImbarcazioneId={newBookingInitialImbarcazione}
+        initialNs3000BoatId={newBookingInitialNs3000BoatId}
+        initialNs3000BoatName={newBookingInitialNs3000BoatName}
+        initialBoatSource={newBookingInitialNs3000BoatId ? 'ns3000' : 'locale'}
       />
       {showNs3000Dettagli && ns3000BookingDetail && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">

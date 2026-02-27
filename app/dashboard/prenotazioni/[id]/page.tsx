@@ -39,7 +39,7 @@ export default function PrenotazioneDettaglioPage() {
           clienti(nome, cognome, email, telefono, nazione),
           servizi(nome, tipo, descrizione),
           imbarcazioni(nome, tipo, categoria),
-          transazioni(*)
+          log_pagamenti(*)
         `)
         .eq('id', params.id)
         .single()
@@ -99,7 +99,7 @@ export default function PrenotazioneDettaglioPage() {
     try {
       // Crea transazione
       const { error: transazioneError } = await supabase
-        .from('transazioni')
+        .from('log_pagamenti')
         .insert({
           prenotazione_id: params.id,
           importo: parseFloat(nuovoPagamento.importo.toString()),
@@ -541,11 +541,11 @@ export default function PrenotazioneDettaglioPage() {
           </button>
 
           {/* Transazioni */}
-          {prenotazione.transazioni && prenotazione.transazioni.length > 0 && (
+          {prenotazione.log_pagamenti && prenotazione.log_pagamenti.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-lg font-bold text-gray-900 mb-4">📊 Storico Transazioni</h2>
               <div className="space-y-2">
-                {prenotazione.transazioni.map((t: any) => (
+                {prenotazione.log_pagamenti.map((t: any) => (
                   <div key={t.id} className="flex justify-between items-center text-sm py-2 border-b border-gray-100 last:border-0">
                     <div>
                       <div className="font-medium">{t.tipo_pagamento}</div>

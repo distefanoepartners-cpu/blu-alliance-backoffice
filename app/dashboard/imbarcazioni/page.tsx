@@ -16,6 +16,8 @@ export default function ImbarcazioniPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [selectedImbarcazione, setSelectedImbarcazione] = useState<any>(null)
   const [serviziSelezionati, setServiziSelezionati] = useState<{[key: string]: boolean}>({})
+  // Prezzi specifici per barca, per servizio
+  const [prezziServizi, setPrezziServizi] = useState<{[key: string]: number | string}>({})
   const [uploadingImage, setUploadingImage] = useState(false)
   const [filtroFornitore, setFiltroFornitore] = useState<string>('tutti')
   const [filtroCategoria, setFiltroCategoria] = useState<string>('tutti')
@@ -335,10 +337,14 @@ export default function ImbarcazioniPage() {
     setSelectedImbarcazione(imbarcazione)
     
     const stati: {[key: string]: boolean} = {}
+    const prezzi: {[key: string]: number | string} = {}
     imbarcazione.servizi_associati.forEach((s: any) => {
       stati[s.id] = true
+      // Usa prezzo_personalizzato se presente, altrimenti prezzo_finale (calcolato per categoria)
+      prezzi[s.id] = s.prezzo_personalizzato ?? s.prezzo_finale ?? ''
     })
     setServiziSelezionati(stati)
+    setPrezziServizi(prezzi)
     
     setShowServiziModal(true)
   }
@@ -365,12 +371,17 @@ export default function ImbarcazioniPage() {
 
       const serviziDaInserire = Object.entries(serviziSelezionati)
         .filter(([_, isSelected]) => isSelected)
-        .map(([servizioId]) => ({
-          imbarcazione_id: selectedImbarcazione.id,
-          servizio_id: servizioId,
-          attivo: true,
-          prezzo_personalizzato: null
-        }))
+        .map(([servizioId]) => {
+          const prezzo = prezziServizi[servizioId]
+          return {
+            imbarcazione_id: selectedImbarcazione.id,
+            servizio_id: servizioId,
+            attivo: true,
+            prezzo_personalizzato: prezzo !== '' && prezzo !== null && prezzo !== undefined
+              ? parseFloat(String(prezzo))
+              : null
+          }
+        })
 
       if (serviziDaInserire.length > 0) {
         const { error } = await supabase
@@ -825,13 +836,13 @@ export default function ImbarcazioniPage() {
         </div>
       )}
 
-      {/* Modal Gestione Servizi - INVARIATO */}
+      {/* Modal Gestione Servizi con Prezzi per Barca */}
       {showServiziModal && selectedImbarcazione && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="p-6 border-b flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-gray-900">Gestisci Servizi</h2>
+                <h2 className="text-2xl font-bold text-gray-900">Servizi & Prezzi</h2>
                 <p className="text-sm text-gray-600 mt-1">
                   {selectedImbarcazione.nome} • <span className={`font-semibold ${getCategoriaColor(selectedImbarcazione.categoria).replace('bg-', 'text-').replace('-100', '-600')}`}>
                     {getCategoriaLabel(selectedImbarcazione.categoria)}
@@ -846,60 +857,76 @@ export default function ImbarcazioniPage() {
             <div className="p-6 overflow-y-auto flex-1">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                 <p className="text-sm text-blue-900">
-                  💡 <strong>Prezzi Dinamici:</strong> I prezzi mostrati sono automaticamente calcolati in base alla categoria della barca ({getCategoriaLabel(selectedImbarcazione.categoria)}).
+                  💡 Attiva i servizi offerti da questa barca e imposta il <strong>prezzo specifico</strong> per ognuno. Il prezzo verrà proposto automaticamente al momento della prenotazione.
                 </p>
               </div>
 
               <div className="space-y-3">
                 {servizi.map(servizio => {
-                  const prezzoDinamico = getPrezzoServizioPerCategoria(servizio, selectedImbarcazione.categoria)
                   const isSelected = serviziSelezionati[servizio.id] || false
 
                   return (
                     <div
                       key={servizio.id}
-                      className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
+                      className={`border-2 rounded-lg transition-all ${
                         isSelected
                           ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 bg-white hover:border-gray-300'
+                          : 'border-gray-200 bg-white'
                       }`}
-                      onClick={() => toggleServizio(servizio.id)}
                     >
-                      <div className="flex items-start gap-3">
+                      {/* Riga principale: checkbox + nome */}
+                      <div
+                        className="flex items-center gap-3 p-4 cursor-pointer"
+                        onClick={() => toggleServizio(servizio.id)}
+                      >
                         <input
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => {}}
-                          className="mt-1 w-4 h-4 text-blue-600 rounded"
+                          className="w-4 h-4 text-blue-600 rounded flex-shrink-0"
                         />
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between mb-1">
-                            <h4 className="font-semibold text-gray-900">{servizio.nome}</h4>
-                            <span className="text-lg font-bold text-blue-600">
-                              €{prezzoDinamico?.toLocaleString() || '0'}
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-600 capitalize">{servizio.tipo}</p>
-                          
-                          <div className="mt-2 flex gap-3 text-xs">
-                            {servizio.prezzi_categoria.simple && (
-                              <span className="text-gray-500">
-                                Simple: €{servizio.prezzi_categoria.simple}
-                              </span>
-                            )}
-                            {servizio.prezzi_categoria.premium && (
-                              <span className="text-gray-500">
-                                Premium: €{servizio.prezzi_categoria.premium}
-                              </span>
-                            )}
-                            {servizio.prezzi_categoria.luxury && (
-                              <span className="text-gray-500">
-                                Luxury: €{servizio.prezzi_categoria.luxury}
-                              </span>
-                            )}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-gray-900">{servizio.nome}</div>
+                          <div className="text-xs text-gray-500 capitalize mt-0.5">{servizio.tipo}</div>
+                        </div>
+                        {/* Badge stato */}
+                        {isSelected && prezziServizi[servizio.id] ? (
+                          <span className="text-sm font-bold text-blue-700">
+                            €{parseFloat(String(prezziServizi[servizio.id])).toLocaleString('it-IT')}
+                          </span>
+                        ) : isSelected ? (
+                          <span className="text-xs text-amber-600 font-medium">⚠️ Prezzo mancante</span>
+                        ) : null}
+                      </div>
+
+                      {/* Input prezzo — visibile solo se selezionato */}
+                      {isSelected && (
+                        <div
+                          className="px-4 pb-4 pt-0"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs font-medium text-gray-600 whitespace-nowrap">
+                              Prezzo per questa barca (€)
+                            </label>
+                            <div className="relative flex-1 max-w-[180px]">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">€</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={prezziServizi[servizio.id] ?? ''}
+                                onChange={(e) => setPrezziServizi(prev => ({
+                                  ...prev,
+                                  [servizio.id]: e.target.value
+                                }))}
+                                placeholder="0.00"
+                                className="w-full pl-7 pr-3 py-2 border border-blue-300 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                              />
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   )
                 })}
@@ -917,7 +944,7 @@ export default function ImbarcazioniPage() {
                 onClick={handleSalvaServizi}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
-                Salva Servizi
+                Salva Servizi & Prezzi
               </button>
             </div>
           </div>

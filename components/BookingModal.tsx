@@ -14,6 +14,9 @@ interface BookingModalProps {
   prenotazione?: any // Se presente = modifica, altrimenti = nuova
   initialDate?: string            // Data preselezionata (dal planning)
   initialImbarcazioneId?: string  // Imbarcazione preselezionata (dal planning)
+  initialNs3000BoatId?: string    // Barca NS3000 preselezionata (dal planning)
+  initialNs3000BoatName?: string  // Nome barca NS3000 (dal planning)
+  initialBoatSource?: 'locale' | 'ns3000'
 }
 
 function generateCodice(): string {
@@ -22,8 +25,39 @@ function generateCodice(): string {
   return `BA${dateStr}-${rand}`
 }
 
-export default function BookingModal({ isOpen, onClose, onSave, prenotazione, initialDate, initialImbarcazioneId }: BookingModalProps) {
+// Helper: invia email di conferma + notifica booking@ e fornitore
+async function inviaNotifiche(prenotazioneId: string, lingua: string) {
+  try {
+    const res = await fetch('/api/send-confirmation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prenotazioneId, lingua, tipo: 'conferma', notificaFornitore: true })
+    })
+    if (!res.ok) {
+      const err = await res.json()
+      console.warn('⚠️ Notifica email fallita:', err)
+    }
+  } catch (e) {
+    console.warn('⚠️ Errore invio notifiche:', e)
+  }
+}
+
+export default function BookingModal({ isOpen, onClose, onSave, prenotazione, initialDate, initialImbarcazioneId, initialNs3000BoatId, initialNs3000BoatName, initialBoatSource }: BookingModalProps) {
   const isEdit = !!prenotazione
+
+  // ID delle imbarcazioni locali già gestite da NS3000 → escluse dal dropdown locale
+  const BA_IDS_IN_NS3000 = new Set([
+    'b743d220-6200-49de-9324-68297e4eee75', // Salpa Soleil 20 - 01
+    '64e06e82-ed6e-4f23-b06e-14533a0187c6', // Salpa Soleil 20 - 02
+    '7e854592-bb5d-4971-98aa-ae66c2fa66ba', // Salpa Soleil 20 - 03
+    'b2a20895-eeab-493d-a2fb-53ef5ba1d220', // Salpa Soleil 20 - 04
+    '4c4f4b54-4ee6-481f-94f9-a142b5d651b0', // Cayman 585 - 05
+    '9a6cc58f-bb70-440e-92a1-d2e2c2712e5b', // Cayman 585 - 06
+    '2d4995ec-35b3-4358-ace1-54621a9528ed', // Cab Dorado 10
+    '51231c4f-b929-466c-aed3-9440639e0bd7', // Manò 24 Sport
+    '8d4d1bd6-142f-4d0f-8854-333742eeeba3', // Clubman 26
+    'a079598f-b25d-49d6-90ce-b25146687a31', // Manò 25 Sport
+  ])
 
   // Options from DB
   const [clienti, setClienti] = useState<any[]>([])
@@ -32,9 +66,9 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
   const [loadingOptions, setLoadingOptions] = useState(true)
 
   // NS3000
-  const [boatSource, setBoatSource] = useState<'locale' | 'ns3000'>('locale')
+  const [boatSource, setBoatSource] = useState<'locale' | 'ns3000'>(initialBoatSource || 'locale')
   const [ns3000Boats, setNs3000Boats] = useState<any[]>([])
-  const [ns3000BoatId, setNs3000BoatId] = useState('')
+  const [ns3000BoatId, setNs3000BoatId] = useState(initialNs3000BoatId || '')
   const [ns3000TimeSlot, setNs3000TimeSlot] = useState<'full_day' | 'morning' | 'afternoon'>('full_day')
   const [ns3000Availability, setNs3000Availability] = useState<any>(null)
   const [checkingAvailability, setCheckingAvailability] = useState(false)
@@ -139,15 +173,33 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
     try {
       setLoadingOptions(true)
 
-      const [clientiRes, serviziRes, imbarcazioniRes] = await Promise.all([
+      const [clientiRes, serviziRes, imbarcazioniRes, serviziAssociatiRes] = await Promise.all([
         supabase.from('clienti').select('id, nome, cognome, email, telefono').order('cognome'),
-        supabase.from('servizi').select('id, nome, tipo, prezzo_base').eq('attivo', true).order('nome'),
-        supabase.from('imbarcazioni').select('id, nome, tipo, categoria, fornitore_id').eq('attiva', true).order('nome')
+        // Servizi solo descrittivi — senza prezzo_base
+        supabase.from('servizi').select('id, nome, tipo').eq('attivo', true).order('nome'),
+        supabase.from('imbarcazioni').select('id, nome, tipo, categoria, fornitore_id').eq('attiva', true).order('nome'),
+        // Prezzi per barca: dalla view che include prezzo_personalizzato
+        supabase.from('vista_imbarcazioni_servizi_con_prezzi').select('imbarcazione_id, servizio_id, servizio_tipo, prezzo_finale')
       ])
 
       setClienti(clientiRes.data || [])
       setServizi(serviziRes.data || [])
-      setImbarcazioni(imbarcazioniRes.data || [])
+      // Arricchisce ogni imbarcazione con mappa tipo→prezzo per auto-fill
+      const serviziAssociati = serviziAssociatiRes.data || []
+      const imbarcazioniConPrezzi = (imbarcazioniRes.data || []).map(imb => ({
+        ...imb,
+        prezzi_servizi: serviziAssociati
+          .filter(sa => sa.imbarcazione_id === imb.id)
+          .reduce((acc: any, sa: any) => {
+            // Indicizza per servizio_id E per tipo per flessibilità
+            if (sa.prezzo_finale) {
+              acc[sa.servizio_id] = sa.prezzo_finale
+              acc[sa.servizio_tipo] = sa.prezzo_finale
+            }
+            return acc
+          }, {})
+      }))
+      setImbarcazioni(imbarcazioniConPrezzi)
 
       // Carica barche NS3000
       try {
@@ -228,18 +280,23 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
     setShowCustomerDropdown(false)
   }
 
-  // Auto-set prezzo from servizio
+  // Auto-set prezzo da barca + servizio
   useEffect(() => {
-    if (!isEdit && formData.servizio_id) {
+    // Solo in locale mode, non in ns3000 (lì il prezzo è libero)
+    if (!isEdit && boatSource === 'locale' && formData.imbarcazione_id && formData.servizio_id) {
+      const barca = imbarcazioni.find(i => i.id === formData.imbarcazione_id)
       const servizio = servizi.find(s => s.id === formData.servizio_id)
-      if (servizio && servizio.prezzo_base > 0) {
-        setFormData(prev => ({
-          ...prev,
-          prezzo_totale: servizio.prezzo_base
-        }))
+      if (barca?.prezzi_servizi) {
+        // Cerca prima per servizio_id, poi per tipo
+        const prezzo = barca.prezzi_servizi[formData.servizio_id]
+          ?? barca.prezzi_servizi[servizio?.tipo]
+          ?? null
+        if (prezzo && prezzo > 0) {
+          setFormData(prev => ({ ...prev, prezzo_totale: prezzo }))
+        }
       }
     }
-  }, [formData.servizio_id, servizi, isEdit])
+  }, [formData.imbarcazione_id, formData.servizio_id, boatSource, imbarcazioni, servizi, isEdit])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -334,6 +391,10 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
           }
 
           toast.success(`Prenotazione NS3000 creata! ${result.ns3000_booking?.booking_number || ''}`)
+          // Invia email conferma + notifica booking@ e fornitore
+          if (result.local_booking?.id) {
+            inviaNotifiche(result.local_booking.id, formData.lingua || 'it')
+          }
         } else {
           // Prenotazione locale (originale)
           const { error } = await supabase
@@ -361,6 +422,15 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
 
           if (error) throw error
           toast.success('Prenotazione creata!')
+          // Recupera l'id appena inserito e invia notifiche
+          const { data: nuova } = await supabase
+            .from('prenotazioni')
+            .select('id')
+            .eq('codice_prenotazione', formData.codice_prenotazione)
+            .single()
+          if (nuova?.id) {
+            inviaNotifiche(nuova.id, formData.lingua || 'it')
+          }
         }
       }
 
@@ -491,11 +561,14 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
                         required={boatSource === 'locale'}
                       >
                         <option value="">Seleziona...</option>
-                        {imbarcazioni.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.nome} ({b.categoria})
-                          </option>
-                        ))}
+                        {imbarcazioni
+                          .filter(b => !BA_IDS_IN_NS3000.has(b.id))
+                          .map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.nome} ({b.categoria})
+                            </option>
+                          ))
+                        }
                       </select>
                     ) : (
                       <div>
@@ -557,7 +630,7 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
                       <option value="">Seleziona...</option>
                       {servizi.map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.nome} {s.prezzo_base > 0 ? `(€${s.prezzo_base})` : ''}
+                          {s.nome}
                         </option>
                       ))}
                     </select>
