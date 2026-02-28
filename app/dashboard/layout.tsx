@@ -36,6 +36,16 @@ function DashboardLayoutContent({
     )
   }
 
+  // Non autenticato → redirect al login
+  if (!user) {
+    router.replace('/')
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-500">Reindirizzamento...</p>
+      </div>
+    )
+  }
+
   // ═══ MENU PRINCIPALE ═══
   const mainMenuItems = [
     { href: '/dashboard/disponibilita', label: 'Planning', icon: Calendar, roles: ['admin', 'operatore', 'staff'] },
