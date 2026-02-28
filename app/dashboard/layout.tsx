@@ -4,13 +4,10 @@ export const dynamic = 'force-dynamic'
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { LogOut, Menu, X, Ship, Anchor, Calendar, MapPin, Users, Building2, BarChart3, UserCircle, Settings, ChevronDown, ChevronRight, DollarSign } from 'lucide-react'
+import { LogOut, Menu, X, Ship, Anchor, Calendar, Users, Building2, BarChart3, UserCircle, Settings, ChevronDown, ChevronRight, MessageSquare, ShieldCheck } from 'lucide-react'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
-import NotificationManager from '@/components/NotificationManager'
-import BriefingModal from '@/components/BriefingModal'
-import InAppNotificationHandler from '@/components/InAppNotificationHandler';
 
 function DashboardLayoutContent({
   children,
@@ -18,15 +15,16 @@ function DashboardLayoutContent({
   children: React.ReactNode
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [adminMenuOpen, setAdminMenuOpen] = useState(false) // ⭐ NUOVO: Stato sottomenu
-  const { user, loading, isAdmin, isPartner, logout } = useAuth()
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false)
+  const { user, loading, isAdmin, logout } = useAuth()
 
   const handleLogout = async () => {
     await logout()
   }
 
-  // Loading screen durante caricamento auth
+  // Loading screen
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -38,27 +36,31 @@ function DashboardLayoutContent({
     )
   }
 
-  // ⭐ MENU PRINCIPALE (filtrato per ruolo)
+  // ═══ MENU PRINCIPALE ═══
   const mainMenuItems = [
-    { href: '/', label: 'Dashboard', icon: BarChart3, roles: ['admin', 'staff'] },
-    { href: '/bookings', label: 'Prenotazioni', icon: Calendar, roles: ['admin', 'staff', 'partner'] },
-    { href: '/collective-tours', label: 'Tour Collettivi', icon: Users, roles: ['admin', 'staff'] },
-    { href: '/partner/bookings', label: 'Le mie Prenotazioni', icon: Calendar, roles: ['partner'] },
-    { href: '/partner/new-booking', label: 'Nuova Prenotazione', icon: MapPin, roles: ['partner'] },
+    { href: '/dashboard/disponibilita', label: 'Planning', icon: Calendar, roles: ['admin', 'operatore', 'staff'] },
+    { href: '/dashboard/prenotazioni', label: 'Prenotazioni', icon: Calendar, roles: ['admin', 'staff'] },
+    { href: '/dashboard/statistiche', label: 'Statistiche', icon: BarChart3, roles: ['admin'] },
+    // Operatore: vede solo le sue barche + la propria scheda fornitore
+    { href: '/dashboard/mie-barche', label: 'Le mie Barche', icon: Ship, roles: ['operatore'] },
+    { href: '/dashboard/mia-azienda', label: 'La mia Azienda', icon: Building2, roles: ['operatore'] },
+    { href: '/dashboard/skipper', label: 'I miei Skipper', icon: UserCircle, roles: ['operatore'] },
   ]
 
-  // ⭐ SOTTOMENU AMMINISTRAZIONE (solo admin)
+  // ═══ SOTTOMENU AMMINISTRAZIONE (solo admin) ═══
   const adminMenuItems = [
-    { href: '/boats', label: 'Flotta', icon: Ship },
-    { href: '/services', label: 'Servizi', icon: Anchor },
-    { href: '/skippers', label: 'Skipper', icon: UserCircle },
-    { href: '/customers', label: 'Clienti', icon: Users },
-    { href: '/suppliers', label: 'Fornitori', icon: Building2 },
-    { href: '/reports', label: 'Reports', icon: BarChart3 },
-    { href: '/users', label: 'Gestione Utenti', icon: Settings },
-    { href: '/briefings', label: 'Promemoria', icon: Calendar },
-    { href: '/prezzi', label: 'Listino Prezzi', icon: DollarSign },
+    { href: '/dashboard/imbarcazioni', label: 'Flotta', icon: Ship },
+    { href: '/dashboard/servizi', label: 'Servizi', icon: Anchor },
+    { href: '/dashboard/skipper', label: 'Skipper', icon: UserCircle },
+    { href: '/dashboard/clienti', label: 'Clienti', icon: Users },
+    { href: '/dashboard/fornitori', label: 'Fornitori', icon: Building2 },
+    { href: '/dashboard/chatbot-leads', label: 'Chatbot Leads', icon: MessageSquare },
+    { href: '/dashboard/amministratori', label: 'Gestione Utenti', icon: ShieldCheck },
   ]
+
+  function isActive(href: string) {
+    return pathname === href || pathname?.startsWith(href + '/')
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -67,23 +69,20 @@ function DashboardLayoutContent({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
-            <Link href="/">
+            <Link href="/dashboard/disponibilita">
               <div className="flex items-center gap-3 cursor-pointer">
-                <img src="/icon-192.png" alt="NS3000" className="h-10 w-10" />
+                <img src="/icon-192.png" alt="Blu Alliance" className="h-10 w-10" />
                 <div>
-                  <h1 className="text-xl font-bold text-blue-600">NS3000Rent srl</h1>
+                  <h1 className="text-xl font-bold text-blue-600">Blu Alliance</h1>
                   {user && (
                     <p className="text-xs text-gray-500">
-                      {isPartner ? (
-                        <>
-                          {user.supplier_name || user.full_name}
-                          <span className="ml-2 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs">Partner</span>
-                        </>
+                      {user.full_name}
+                      {isAdmin ? (
+                        <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">Admin</span>
                       ) : (
-                        <>
-                          {user.full_name} 
-                          {!isAdmin && <span className="ml-2 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">Solo Lettura</span>}
-                        </>
+                        <span className="ml-2 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">
+                          {user.role === 'operatore' ? 'Operatore' : 'Staff'}
+                        </span>
                       )}
                     </p>
                   )}
@@ -92,11 +91,16 @@ function DashboardLayoutContent({
             </Link>
 
             {/* Desktop Navigation */}
-            <nav className="hidden md:flex gap-2 items-center">
-              {/* Menu principale */}
+            <nav className="hidden md:flex gap-1 items-center">
               {mainMenuItems.filter(item => item.roles.includes(user?.role || 'staff')).map((item) => (
                 <Link key={item.href} href={item.href}>
-                  <Button variant="ghost" size="sm">{item.label}</Button>
+                  <Button 
+                    variant={isActive(item.href) ? 'default' : 'ghost'} 
+                    size="sm"
+                    className={isActive(item.href) ? 'bg-blue-600 text-white' : ''}
+                  >
+                    {item.label}
+                  </Button>
                 </Link>
               ))}
               
@@ -116,13 +120,10 @@ function DashboardLayoutContent({
                   
                   {adminMenuOpen && (
                     <>
-                      {/* Overlay per chiudere cliccando fuori */}
                       <div 
                         className="fixed inset-0 z-10" 
                         onClick={() => setAdminMenuOpen(false)}
                       />
-                      
-                      {/* Dropdown menu */}
                       <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20">
                         {adminMenuItems.map((item) => {
                           const Icon = item.icon
@@ -131,7 +132,9 @@ function DashboardLayoutContent({
                               key={item.href}
                               href={item.href}
                               onClick={() => setAdminMenuOpen(false)}
-                              className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 text-gray-700 text-sm"
+                              className={`flex items-center gap-3 px-4 py-2 hover:bg-gray-50 text-sm ${
+                                isActive(item.href) ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                              }`}
                             >
                               <Icon className="h-4 w-4 text-blue-600" />
                               <span>{item.label}</span>
@@ -145,9 +148,8 @@ function DashboardLayoutContent({
               )}
             </nav>
 
-            {/* Desktop Actions: Notifications + Logout */}
+            {/* Desktop Logout */}
             <div className="hidden md:flex items-center gap-3">
-              {user && !isPartner && <NotificationManager userId={user.id} />}
               <Button variant="outline" onClick={handleLogout} size="sm" className="gap-2">
                 <LogOut className="h-4 w-4" />
                 Esci
@@ -172,13 +174,6 @@ function DashboardLayoutContent({
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-gray-200 bg-white">
             <div className="px-4 py-2 space-y-1">
-              {/* Mobile Notifications (non per partner) */}
-              {user && !isPartner && (
-                <div className="px-4 py-3 border-b border-gray-100">
-                  <NotificationManager userId={user.id} />
-                </div>
-              )}
-              
               {/* Menu principale mobile */}
               {mainMenuItems.filter(item => item.roles.includes(user?.role || 'staff')).map((item) => {
                 const Icon = item.icon
@@ -187,7 +182,11 @@ function DashboardLayoutContent({
                     key={item.href}
                     href={item.href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center gap-3 px-4 py-3 rounded-md hover:bg-gray-100 text-gray-700"
+                    className={`flex items-center gap-3 px-4 py-3 rounded-md ${
+                      isActive(item.href) 
+                        ? 'bg-blue-50 text-blue-700' 
+                        : 'hover:bg-gray-100 text-gray-700'
+                    }`}
                   >
                     <Icon className="h-5 w-5 text-blue-600" />
                     <span className="font-medium">{item.label}</span>
@@ -218,7 +217,11 @@ function DashboardLayoutContent({
                             key={item.href}
                             href={item.href}
                             onClick={() => setMobileMenuOpen(false)}
-                            className="flex items-center gap-3 px-4 py-2 rounded-md hover:bg-gray-50 text-gray-600 text-sm"
+                            className={`flex items-center gap-3 px-4 py-2 rounded-md text-sm ${
+                              isActive(item.href)
+                                ? 'bg-blue-50 text-blue-700 font-medium'
+                                : 'hover:bg-gray-50 text-gray-600'
+                            }`}
                           >
                             <Icon className="h-4 w-4 text-blue-600" />
                             <span>{item.label}</span>
@@ -250,12 +253,6 @@ function DashboardLayoutContent({
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {children}
       </main>
-      
-      {/* Handler notifiche in-app quando app è visibile */}
-      <InAppNotificationHandler />
-      
-      {/* Briefing Modal - DEVE essere letto (solo admin/staff) */}
-      {user && !isPartner && <BriefingModal userId={user.id} />}
     </div>
   )
 }

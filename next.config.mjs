@@ -1,20 +1,5 @@
-import withPWA from 'next-pwa';
-
-const withPWAConfig = withPWA({
-  dest: 'public',
-  register: true,
-  skipWaiting: true,
-  disable: process.env.NODE_ENV === 'development',
-  buildExcludes: [/middleware-manifest\.json$/],
-  scope: '/',
-  sw: 'sw.js',
-  runtimeCaching: [],
-  publicExcludes: ['!robots.txt', '!sitemap.xml']
-});
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  turbopack: {},
   images: {
     remotePatterns: [
       {
@@ -22,7 +7,6 @@ const nextConfig = {
         hostname: 'blualliancegroup.com',
         pathname: '/logo/**',
       },
-      // 🔧 AGGIUNTO: Supporto immagini Supabase Storage
       {
         protocol: 'https',
         hostname: 'wpzxvwenhjqnwhqowxms.supabase.co',
@@ -33,4 +17,4 @@ const nextConfig = {
   },
 };
 
-export default withPWAConfig(nextConfig);
+export default nextConfig;

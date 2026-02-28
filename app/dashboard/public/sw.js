@@ -1,41 +1,24 @@
-const CACHE_NAME = 'blu-alliance-v1';
+// Service Worker minimale — PWA installabile, ZERO cache
+const CACHE_VERSION = 'v2-nocache';
 
 self.addEventListener('install', (event) => {
-  console.log('✅ Service Worker: Installing...');
+  // Pulisci tutte le cache vecchie di next-pwa
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll([
-        '/',
-        '/manifest.json',
-        '/icon-192.png',
-        '/icon-512.png',
-        '/logo.png'
-      ]);
-    })
+    caches.keys().then(names => 
+      Promise.all(names.map(name => caches.delete(name)))
+    ).then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('✅ Service Worker: Activating...');
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cache) => {
-          if (cache !== CACHE_NAME) {
-            return caches.delete(cache);
-          }
-        })
-      );
-    })
+    caches.keys().then(names =>
+      Promise.all(names.map(name => caches.delete(name)))
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
+// Fetch: tutto dalla rete, nessun cache
 self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
-    })
-  );
+  event.respondWith(fetch(event.request));
 });

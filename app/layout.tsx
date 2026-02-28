@@ -40,6 +40,24 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="mobile-web-app-capable" content="yes" />
+        <script dangerouslySetInnerHTML={{ __html: `
+          // Registra SW minimale (per installabilità PWA) e pulisci cache vecchie
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').then(function(reg) {
+              console.log('[SW] Registrato');
+            }).catch(function(err) {
+              console.log('[SW] Errore:', err);
+            });
+            // Pulisci cache residue di next-pwa
+            caches.keys().then(function(names) {
+              names.forEach(function(name) { 
+                if (name.startsWith('workbox-') || name.startsWith('next-')) {
+                  caches.delete(name);
+                }
+              });
+            });
+          }
+        `}} />
       </head>
       <body className={inter.className}>
         {children}

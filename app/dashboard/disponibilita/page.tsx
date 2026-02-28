@@ -6,11 +6,10 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMont
 import { it } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import BookingModal from '@/components/BookingModal'
-import { useUserContext } from '@/lib/user-context'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function PlanningMensile() {
-  const { role, fornitoreId } = useUserContext()
-  const isOperatore = role === 'operatore'
+  const { isOperatore, fornitoreId, loading: authLoading } = useAuth()
 
   // Dimensioni griglia responsive
   const [colSizes, setColSizes] = useState({ barca: 120, giorno: 38, altezza: 42 })
@@ -96,13 +95,14 @@ export default function PlanningMensile() {
   const currentYear = currentMonthStart.getFullYear()
 
   useEffect(() => {
+    if (authLoading) return
     loadData()
     loadNs3000Data()
-  }, [currentMonthStart])
+  }, [currentMonthStart, authLoading, isOperatore, fornitoreId])
 
   useEffect(() => {
     applicaFiltri()
-  }, [imbarcazioni, filtroFornitore, filtroCategoria, showNs3000, ns3000Boats])
+  }, [imbarcazioni, filtroFornitore, filtroCategoria, showNs3000, ns3000Boats, isOperatore, fornitoreId])
 
   // Chiudi context menu cliccando fuori
   useEffect(() => {
@@ -183,6 +183,8 @@ export default function PlanningMensile() {
     try {
       setLoading(true)
 
+      // DEBUG — rimuovere dopo test
+      console.log('[Planning] loadData → isOperatore:', isOperatore, 'fornitoreId:', fornitoreId)
       const dateFrom = format(currentMonthStart, 'yyyy-MM-dd')
       const dateTo = format(currentMonthEnd, 'yyyy-MM-dd')
 
@@ -200,8 +202,17 @@ export default function PlanningMensile() {
         .order('nome')
 
       // Operatore vede solo le proprie imbarcazioni
-      if (isOperatore && fornitoreId) {
-        barcheQuery.eq('fornitore_id', fornitoreId)
+      if (isOperatore) {
+        if (fornitoreId) {
+          barcheQuery.eq('fornitore_id', fornitoreId)
+        } else {
+          // Operatore senza fornitore: non mostrare nulla
+          setImbarcazioni([])
+          setPrenotazioni([])
+          setBlocchi([])
+          setLoading(false)
+          return
+        }
       }
 
       const { data: barcheData } = await barcheQuery
@@ -233,9 +244,9 @@ export default function PlanningMensile() {
 
   function applicaFiltri() {
     let filtrate = [...imbarcazioni]
-    // Operatore: re-applica il filtro per sicurezza
-    if (isOperatore && fornitoreId) {
-      filtrate = filtrate.filter(b => b.fornitore_id === fornitoreId)
+    // Operatore: mostra solo le proprie barche
+    if (isOperatore) {
+      filtrate = fornitoreId ? filtrate.filter(b => b.fornitore_id === fornitoreId) : []
     }
     // FIX: l'operatore non deve mai perdere le sue barche NS3000 dalla vista
     if (!isOperatore && showNs3000 && ns3000Boats.length > 0) {

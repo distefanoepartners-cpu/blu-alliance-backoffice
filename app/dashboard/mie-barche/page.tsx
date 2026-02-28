@@ -2,23 +2,29 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useUserContext } from '@/lib/user-context'
+import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 
 export default function MieBarchePage() {
-  const { role, fornitoreId } = useUserContext()
+  const { isOperatore, fornitoreId, loading: authLoading } = useAuth()
   const router = useRouter()
   const [imbarcazioni, setImbarcazioni] = useState<any[]>([])
   const [fornitore, setFornitore] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (role && role !== 'operatore') {
+    // Aspetta che auth sia pronta
+    if (authLoading) return
+    if (!isOperatore) {
       router.replace('/dashboard/disponibilita')
       return
     }
-    if (fornitoreId) loadData()
-  }, [role, fornitoreId])
+    if (fornitoreId) {
+      loadData()
+    } else {
+      setLoading(false)
+    }
+  }, [authLoading, isOperatore, fornitoreId])
 
   async function loadData() {
     setLoading(true)

@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -8,15 +8,16 @@ interface AuthUser {
   id: string
   email: string
   full_name?: string
-  supplier_name?: string
   role: 'admin' | 'operatore' | 'staff' | 'partner'
+  fornitore_id?: string | null
 }
 
 interface AuthContextType {
   user: AuthUser | null
   loading: boolean
   isAdmin: boolean
-  isPartner: boolean
+  isOperatore: boolean
+  fornitoreId: string | null
   logout: () => Promise<void>
 }
 
@@ -24,7 +25,8 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   isAdmin: false,
-  isPartner: false,
+  isOperatore: false,
+  fornitoreId: null,
   logout: async () => {},
 })
 
@@ -32,16 +34,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const initialized = useRef(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) await loadUser(session.user)
-      setLoading(false)
-    })
+    if (initialized.current) return
+    initialized.current = true
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_, session) => {
-      if (session?.user) await loadUser(session.user)
-      else { setUser(null); setLoading(false) }
+    async function init() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          await loadUser(session.user)
+        }
+      } catch (e) {
+        console.error('Auth init error:', e)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    init()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setUser(null)
+        return
+      }
+      if (session?.user) {
+        await loadUser(session.user)
+      }
     })
 
     return () => subscription.unsubscribe()
@@ -49,31 +70,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function loadUser(authUser: any) {
     try {
-      // Usa la tabella utenti esistente con i tuoi campi (role admin/operatore)
-      const { data } = await supabase
-        .from('utenti')
-        .select('id, email, nome, cognome, ruolo, fornitore_id')
-        .eq('auth_id', authUser.id)
+      const { data, error } = await supabase
+        .from('amministratori')
+        .select('id, email, nome, cognome, ruolo, fornitore_id, attivo')
+        .eq('user_id', authUser.id)
         .maybeSingle()
 
+      if (error) console.error('Errore lettura amministratori:', error)
+
+      if (data && data.attivo !== false) {
+        // DEBUG — rimuovere dopo test
+        console.log('[Auth] Utente trovato:', data.ruolo, 'fornitore_id:', data.fornitore_id)
+        setUser({
+          id: authUser.id,
+          email: data.email || authUser.email || '',
+          full_name: `${data.nome || ''} ${data.cognome || ''}`.trim() || authUser.email,
+          role: data.ruolo || 'operatore',
+          fornitore_id: data.fornitore_id || null,
+        })
+      } else {
+        console.log('[Auth] Utente NON trovato in amministratori o disattivato, data:', data)
+        setUser({
+          id: authUser.id,
+          email: authUser.email || '',
+          full_name: authUser.email,
+          role: 'operatore',
+          fornitore_id: null,
+        })
+      }
+    } catch (e) {
+      console.error('loadUser error:', e)
       setUser({
         id: authUser.id,
         email: authUser.email || '',
-        full_name: data ? `${data.nome || ''} ${data.cognome || ''}`.trim() : authUser.email,
-        role: data?.ruolo || 'operatore',
+        full_name: authUser.email,
+        role: 'operatore',
+        fornitore_id: null,
       })
-    } catch {
-      // Fallback minimo — non rompe nulla
-      setUser({ id: authUser.id, email: authUser.email || '', role: 'operatore' })
-    } finally {
-      setLoading(false)
     }
   }
 
   async function logout() {
     await supabase.auth.signOut()
     setUser(null)
-    router.push('/login')
+    router.push('/')
   }
 
   return (
@@ -81,7 +121,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       isAdmin: user?.role === 'admin',
-      isPartner: false, // Non usato nel tuo schema attuale
+      isOperatore: user?.role === 'operatore',
+      fornitoreId: user?.fornitore_id || null,
       logout,
     }}>
       {children}

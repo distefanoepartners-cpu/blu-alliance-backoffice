@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 import toast from 'react-hot-toast'
 
 export default function SkipperPage() {
+  const { isOperatore, isAdmin, fornitoreId, loading: authLoading } = useAuth()
   const [skipper, setSkipper] = useState<any[]>([])
   const [skipperFiltrati, setSkipperFiltrati] = useState<any[]>([])
   const [fornitori, setFornitori] = useState<any[]>([])
@@ -24,24 +26,41 @@ export default function SkipperPage() {
     scadenza_patente: '',
     telefono: '',
     email: '',
+    note: '',
     attivo: true,
   })
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    if (authLoading) return
+    loadData()
+  }, [authLoading, fornitoreId])
 
   useEffect(() => { applicaFiltri() }, [skipper, searchTerm, filtroStato, filtroFornitore])
 
   async function loadData() {
     try {
       setLoading(true)
-      const [{ data: fornData }, { data: skipData }] = await Promise.all([
-        supabase.from('fornitori').select('id, ragione_sociale').eq('attivo', true).order('ragione_sociale'),
-        supabase.from('skipper')
-          .select('*, fornitori(ragione_sociale)')
-          .order('cognome')
-      ])
+
+      const { data: fornData } = await supabase
+        .from('fornitori')
+        .select('id, ragione_sociale')
+        .eq('attivo', true)
+        .order('ragione_sociale')
+
+      let skipQuery = supabase
+        .from('skipper')
+        .select('*, fornitori(ragione_sociale)')
+        .order('cognome')
+
+      // Operatore vede solo i propri skipper
+      if (isOperatore && fornitoreId) {
+        skipQuery = skipQuery.eq('fornitore_id', fornitoreId)
+      }
+
+      const { data: skipData } = await skipQuery
+
       setFornitori(fornData || [])
       setSkipper(skipData || [])
     } catch (e) {
@@ -70,7 +89,7 @@ export default function SkipperPage() {
 
   function handleNew() {
     setEditingId(null)
-    setFormData({ fornitore_id: '', nome: '', cognome: '', numero_patente: '', scadenza_patente: '', telefono: '', email: '', attivo: true })
+    setFormData({ fornitore_id: isOperatore && fornitoreId ? fornitoreId : '', nome: '', cognome: '', numero_patente: '', scadenza_patente: '', telefono: '', email: '', note: '', attivo: true })
     setFormErrors({})
     setShowModal(true)
   }
@@ -85,6 +104,7 @@ export default function SkipperPage() {
       scadenza_patente: s.scadenza_patente || '',
       telefono: s.telefono || '',
       email: s.email || '',
+      note: s.note || '',
       attivo: s.attivo,
     })
     setFormErrors({})
@@ -119,6 +139,7 @@ export default function SkipperPage() {
         scadenza_patente: formData.scadenza_patente,
         telefono: formData.telefono.trim(),
         email: formData.email.trim() || null,
+        note: formData.note.trim() || null,
         attivo: formData.attivo,
       }
       if (editingId) {
@@ -208,7 +229,14 @@ export default function SkipperPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Skipper</h1>
+          {isOperatore && (
+            <span className="px-2.5 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full border border-blue-200 inline-block mb-1">
+              👤 Vista Operatore
+            </span>
+          )}
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
+            {isOperatore ? 'I miei Skipper' : 'Skipper'}
+          </h1>
           <p className="text-gray-500 mt-1 text-sm">Gestione skipper e patenti nautiche</p>
         </div>
         <button
@@ -259,6 +287,7 @@ export default function SkipperPage() {
               <option value="non_attivo">Non attivi</option>
             </select>
           </div>
+          {!isOperatore && (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Fornitore</label>
             <select
@@ -272,6 +301,7 @@ export default function SkipperPage() {
               ))}
             </select>
           </div>
+          )}
         </div>
       </div>
 
@@ -287,7 +317,7 @@ export default function SkipperPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  {['Skipper', 'Fornitore', 'Patente Nautica', 'Scadenza', 'Telefono', 'Stato', ''].map(h => (
+                  {['Skipper', ...(isOperatore ? [] : ['Fornitore']), 'Patente Nautica', 'Scadenza', 'Telefono', 'Stato', ''].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
                       {h}
                     </th>
@@ -303,13 +333,20 @@ export default function SkipperPage() {
                       <td className="px-4 py-3">
                         <div className="font-semibold text-gray-900">{s.cognome} {s.nome}</div>
                         {s.email && <div className="text-xs text-gray-400 mt-0.5">{s.email}</div>}
+                        {s.note && (
+                          <div className="text-xs text-gray-400 mt-0.5 italic truncate max-w-[200px]" title={s.note}>
+                            📝 {s.note}
+                          </div>
+                        )}
                       </td>
-                      {/* Fornitore */}
+                      {/* Fornitore — solo admin */}
+                      {!isOperatore && (
                       <td className="px-4 py-3">
                         <span className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-100">
                           {s.fornitori?.ragione_sociale || '—'}
                         </span>
                       </td>
+                      )}
                       {/* Patente */}
                       <td className="px-4 py-3">
                         <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded text-gray-700">
@@ -391,18 +428,27 @@ export default function SkipperPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Fornitore <span className="text-red-500">*</span>
                 </label>
-                <select
-                  value={formData.fornitore_id}
-                  onChange={(e) => setFormData({ ...formData, fornitore_id: e.target.value })}
-                  className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 ${
-                    formErrors.fornitore_id ? 'border-red-400 bg-red-50' : 'border-gray-300'
-                  }`}
-                >
-                  <option value="">Seleziona fornitore...</option>
-                  {fornitori.map(f => (
-                    <option key={f.id} value={f.id}>{f.ragione_sociale}</option>
-                  ))}
-                </select>
+                {isOperatore && fornitoreId ? (
+                  <>
+                    <div className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700 font-medium">
+                      {fornitori.find(f => f.id === fornitoreId)?.ragione_sociale || 'Il tuo fornitore'}
+                    </div>
+                    <input type="hidden" value={fornitoreId} />
+                  </>
+                ) : (
+                  <select
+                    value={formData.fornitore_id}
+                    onChange={(e) => setFormData({ ...formData, fornitore_id: e.target.value })}
+                    className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 ${
+                      formErrors.fornitore_id ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                    }`}
+                  >
+                    <option value="">Seleziona fornitore...</option>
+                    {fornitori.map(f => (
+                      <option key={f.id} value={f.id}>{f.ragione_sociale}</option>
+                    ))}
+                  </select>
+                )}
                 {formErrors.fornitore_id && <p className="text-xs text-red-500 mt-0.5">{formErrors.fornitore_id}</p>}
               </div>
 
@@ -438,7 +484,21 @@ export default function SkipperPage() {
                 </div>
               </div>
 
-              {/* Stato */}
+              {/* Note */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Note <span className="text-gray-400 text-xs font-normal">(facoltativo)</span>
+                </label>
+                <textarea
+                  value={formData.note}
+                  onChange={(e) => setFormData({ ...formData, note: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  rows={3}
+                  placeholder="Appunti, certificazioni extra, disponibilità..."
+                />
+              </div>
+
+              {/* Stato attivo */}
               <div className="flex items-center gap-3 pt-1">
                 <input
                   type="checkbox"

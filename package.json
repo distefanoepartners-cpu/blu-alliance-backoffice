@@ -11,6 +11,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
     "@supabase/supabase-js": "^2.89.0",
+    "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.554.0",
     "next": "^16.0.10",
@@ -20,7 +21,8 @@
     "react-dom": "^19.2.3",
     "react-hot-toast": "^2.6.0",
     "recharts": "^3.4.1",
-    "resend": "^6.6.0"
+    "resend": "^6.6.0",
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
     "@types/mapbox-gl": "^3.4.1",
