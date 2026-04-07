@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { sendBookingSmsToFornitore } from '@/lib/sms-service'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -85,10 +86,46 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ── 4. SMS FORNITORE ─────────────────────────────────────
+    let fornitoreSmsInviato = false
+    const fornitoreTelefono = fornitore?.telefono
+    if (fornitoreTelefono) {
+      try {
+        const smsResult = await sendBookingSmsToFornitore(
+          fornitoreTelefono,
+          fornitore.ragione_sociale || 'Fornitore',
+          {
+            codice: prenotazione.codice_prenotazione,
+            clienteNome: `${prenotazione.clienti?.nome || ''} ${prenotazione.clienti?.cognome || ''}`.trim(),
+            barcaNome: prenotazione.imbarcazioni?.nome || '-',
+            servizioNome: prenotazione.servizi?.nome || '-',
+            dataServizio: prenotazione.data_servizio,
+            oraImbarco: prenotazione.ora_imbarco || prenotazione.ora_inizio || '',
+            portoImbarco: prenotazione.porto_imbarco || prenotazione.luogo_imbarco || '',
+            numPersone: prenotazione.numero_persone || 0,
+            prezzoTotale: Number(prenotazione.prezzo_totale || 0),
+            caparra: Number(prenotazione.caparra_ricevuta || prenotazione.importo_pagato || 0),
+            noteCliente: prenotazione.note_cliente || undefined,
+          }
+        )
+        fornitoreSmsInviato = smsResult.success
+        if (smsResult.success) {
+          console.log('✅ [send-confirmation] SMS fornitore inviato a:', fornitoreTelefono)
+        } else {
+          console.warn('⚠️ [send-confirmation] SMS fornitore fallito:', smsResult.error)
+        }
+      } catch (smsErr: any) {
+        console.warn('⚠️ [send-confirmation] SMS fornitore errore:', smsErr.message)
+      }
+    } else {
+      console.log('ℹ️ [send-confirmation] Fornitore senza telefono, SMS non inviato')
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Email inviata con successo',
-      fornitoreNotificato: inviaAlFornitore && !!fornitore?.email
+      fornitoreNotificato: inviaAlFornitore && !!fornitore?.email,
+      fornitoreSmsInviato
     })
 
   } catch (error: any) {

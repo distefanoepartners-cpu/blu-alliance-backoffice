@@ -1,8 +1,5 @@
 'use client'
-
-export const dynamic = 'force-dynamic'
-
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -24,6 +21,13 @@ function DashboardLayoutContent({
     await logout()
   }
 
+  // Redirect al login quando non autenticato
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/")
+    }
+  }, [loading, user, router])
+
   // Loading screen
   if (loading) {
     return (
@@ -36,9 +40,7 @@ function DashboardLayoutContent({
     )
   }
 
-  // Non autenticato → redirect al login
   if (!user) {
-    router.replace('/')
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <p className="text-gray-500">Reindirizzamento...</p>

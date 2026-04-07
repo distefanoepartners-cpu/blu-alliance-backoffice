@@ -97,7 +97,9 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
     metodo_pagamento_saldo: '',
     lingua: 'it',
     note_cliente: '',
-    note_interne: ''
+    note_interne: '',
+    porto_imbarco: '',
+    ora_imbarco: ''
   })
 
   const [saving, setSaving] = useState(false)
@@ -134,7 +136,9 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
         metodo_pagamento_saldo: prenotazione.metodo_pagamento_saldo || '',
         lingua: prenotazione.lingua || 'it',
         note_cliente: prenotazione.note_cliente || '',
-        note_interne: prenotazione.note_interne || ''
+        note_interne: prenotazione.note_interne || '',
+        porto_imbarco: prenotazione.porto_imbarco || '',
+        ora_imbarco: prenotazione.ora_imbarco || ''
       })
       // Set customer search name
       if (prenotazione.clienti) {
@@ -159,7 +163,9 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
         metodo_pagamento_saldo: '',
         lingua: 'it',
         note_cliente: '',
-        note_interne: ''
+        note_interne: '',
+        porto_imbarco: '',
+        ora_imbarco: ''
       })
       setCustomerSearch('')
       setBoatSource('locale')
@@ -280,23 +286,31 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
     setShowCustomerDropdown(false)
   }
 
-  // Auto-set prezzo da barca + servizio
+  // Auto-set prezzo da barca + servizio (locale: per-pax se collettivo, NS3000: da slot)
   useEffect(() => {
-    // Solo in locale mode, non in ns3000 (lì il prezzo è libero)
-    if (!isEdit && boatSource === 'locale' && formData.imbarcazione_id && formData.servizio_id) {
+    if (isEdit) return
+    if (boatSource === 'locale' && formData.imbarcazione_id && formData.servizio_id) {
       const barca = imbarcazioni.find(i => i.id === formData.imbarcazione_id)
       const servizio = servizi.find(s => s.id === formData.servizio_id)
       if (barca?.prezzi_servizi) {
-        // Cerca prima per servizio_id, poi per tipo
-        const prezzo = barca.prezzi_servizi[formData.servizio_id]
+        const prezzoUnitario = barca.prezzi_servizi[formData.servizio_id]
           ?? barca.prezzi_servizi[servizio?.tipo]
           ?? null
-        if (prezzo && prezzo > 0) {
-          setFormData(prev => ({ ...prev, prezzo_totale: prezzo }))
+        if (prezzoUnitario && prezzoUnitario > 0) {
+          const isTourCollettivo = servizio?.tipo === 'tour' || servizio?.tipo === 'collettivo' || servizio?.tipo === 'taxi'
+          const prezzoTotale = isTourCollettivo ? prezzoUnitario * (formData.numero_persone || 1) : prezzoUnitario
+          setFormData(prev => ({ ...prev, prezzo_totale: prezzoTotale }))
         }
       }
     }
-  }, [formData.imbarcazione_id, formData.servizio_id, boatSource, imbarcazioni, servizi, isEdit])
+    if (boatSource === 'ns3000' && ns3000BoatId) {
+      const selectedBoat = ns3000Boats.find((b: any) => b.boat_id === ns3000BoatId); const slotPrices = selectedBoat?.prices || ns3000Availability?.prices || ns3000Availability?.slot_prices
+      if (slotPrices) {
+        const prezzoSlot = slotPrices[ns3000TimeSlot] || slotPrices.full_day || 0
+        if (prezzoSlot > 0) setFormData(prev => ({ ...prev, prezzo_totale: prezzoSlot }))
+      }
+    }
+  }, [formData.imbarcazione_id, formData.servizio_id, formData.numero_persone, boatSource, ns3000BoatId, ns3000TimeSlot, ns3000Availability, ns3000Boats, imbarcazioni, servizi, isEdit])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -346,7 +360,9 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
             metodo_pagamento_saldo: formData.metodo_pagamento_saldo || null,
             lingua: formData.lingua,
             note_cliente: formData.note_cliente || null,
-            note_interne: formData.note_interne || null
+            note_interne: formData.note_interne || null,
+            porto_imbarco: formData.porto_imbarco || null,
+            ora_imbarco: formData.ora_imbarco || null
           })
           .eq('id', prenotazione.id)
 
@@ -375,7 +391,9 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
             servizio_id: formData.servizio_id || null,
             ora_inizio: formData.ora_inizio || null,
             metodo_pagamento: formData.metodo_pagamento || 'contanti',
-            lingua: formData.lingua
+            lingua: formData.lingua,
+            porto_imbarco: formData.porto_imbarco || null,
+            ora_imbarco: formData.ora_imbarco || null
           }
 
           const res = await fetch('/api/ns3000/bookings', {
@@ -417,7 +435,9 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
               metodo_pagamento_saldo: formData.metodo_pagamento_saldo || null,
               lingua: formData.lingua,
               note_cliente: formData.note_cliente || null,
-              note_interne: formData.note_interne || null
+              note_interne: formData.note_interne || null,
+              porto_imbarco: formData.porto_imbarco || null,
+              ora_imbarco: formData.ora_imbarco || null
             }])
 
           if (error) throw error
@@ -648,8 +668,8 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
                   </div>
                 </div>
 
-                {/* Riga 3: Data + Ora + Stato + Lingua */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
+                {/* Riga 3: Data + Ora Imbarco + Porto Imbarco + Stato + Lingua */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 md:gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">Data *</label>
                     <input
@@ -662,13 +682,31 @@ export default function BookingModal({ isOpen, onClose, onSave, prenotazione, in
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Ora Inizio</label>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Ora Imbarco</label>
                     <input
                       type="time"
-                      value={formData.ora_inizio}
-                      onChange={(e) => setFormData({ ...formData, ora_inizio: e.target.value })}
+                      value={formData.ora_imbarco || formData.ora_inizio}
+                      onChange={(e) => setFormData({ ...formData, ora_imbarco: e.target.value, ora_inizio: e.target.value })}
                       className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm h-[34px]"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Porto Imbarco</label>
+                    <select
+                      value={formData.porto_imbarco}
+                      onChange={(e) => setFormData({ ...formData, porto_imbarco: e.target.value })}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm h-[34px]"
+                    >
+                      <option value="">Seleziona porto...</option>
+                      <option value="Porto Turistico Marina d'Arechi">Marina d'Arechi</option>
+                      <option value="Molo Manfredi - Porto di Salerno">Molo Manfredi</option>
+                      <option value="Porto di Amalfi">Porto di Amalfi</option>
+                      <option value="Porto di Positano">Porto di Positano</option>
+                      <option value="Porto di Cetara">Porto di Cetara</option>
+                      <option value="Porto di Maiori">Porto di Maiori</option>
+                      <option value="Porto di Agropoli">Porto di Agropoli</option>
+                    </select>
                   </div>
 
                   <div>
