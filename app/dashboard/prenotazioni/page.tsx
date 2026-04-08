@@ -16,6 +16,7 @@ export default function PrenotazioniPage() {
   const [filtroStato, setFiltroStato] = useState<string>('tutte')
   const [filtroPagamento, setFiltroPagamento] = useState<string>('tutti')
   const [filtroMetodo, setFiltroMetodo] = useState<string>('tutti')
+  const [filtroAffiliato, setFiltroAffiliato] = useState<string>('tutti')
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [showEmailModal, setShowEmailModal] = useState(false)
@@ -92,6 +93,10 @@ export default function PrenotazioniPage() {
       if (filtroMetodo === 'non_impostato' && p.metodo_pagamento) return false
       if (filtroMetodo !== 'non_impostato' && p.metodo_pagamento !== filtroMetodo) return false
     }
+
+    // Filtro affiliato
+    if (filtroAffiliato === 'affiliato' && !p.ref_affiliato) return false
+    if (filtroAffiliato === 'diretto' && p.ref_affiliato) return false
     
     // Search
     if (searchTerm.trim()) {
@@ -464,7 +469,7 @@ export default function PrenotazioniPage() {
 
       {/* Filtri */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           {/* Search */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Cerca</label>
@@ -527,6 +532,20 @@ export default function PrenotazioniPage() {
               <option value="non_impostato">⚠️ Non Impostato</option>
             </select>
           </div>
+
+          {/* Provenienza */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Provenienza</label>
+            <select
+              value={filtroAffiliato}
+              onChange={(e) => setFiltroAffiliato(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            >
+              <option value="tutti">Tutte</option>
+              <option value="affiliato">🤝 Da Affiliato</option>
+              <option value="diretto">⚓ Diretta</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -574,6 +593,13 @@ export default function PrenotazioniPage() {
                     {prenotazione.numero_persone && (
                       <div className="text-xs text-gray-400 mt-1">
                         👥 {prenotazione.numero_persone} persone
+                      </div>
+                    )}
+                    {prenotazione.ref_affiliato && (
+                      <div className="mt-1.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 border border-amber-200 rounded-full text-xs font-semibold">
+                          🤝 {prenotazione.ref_affiliato}
+                        </span>
                       </div>
                     )}
                   </td>
