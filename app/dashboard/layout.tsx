@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { LogOut, Menu, X, Ship, Anchor, Calendar, Users, Building2, BarChart3, UserCircle, Settings, ChevronDown, ChevronRight, MessageSquare, ShieldCheck } from 'lucide-react'
+import { LogOut, Menu, X, Ship, Anchor, Calendar, Users, Building2, BarChart3, UserCircle, Settings, ChevronDown, ChevronRight, MessageSquare, ShieldCheck, Users2 } from 'lucide-react'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 
 function DashboardLayoutContent({
@@ -52,10 +52,11 @@ function DashboardLayoutContent({
   const mainMenuItems = [
     { href: '/dashboard/disponibilita', label: 'Planning', icon: Calendar, roles: ['admin', 'operatore', 'staff'] },
     { href: '/dashboard/prenotazioni', label: 'Prenotazioni', icon: Calendar, roles: ['admin', 'staff'] },
-    { href: '/dashboard/statistiche', label: 'Statistiche', icon: BarChart3, roles: ['admin'] },
+    { href: '/dashboard/collettivi', label: 'Small Group', icon: Users2, roles: ['admin', 'staff', 'operatore'] },
     // Operatore: vede solo le sue barche + la propria scheda fornitore
     { href: '/dashboard/mie-barche', label: 'Le mie Barche', icon: Ship, roles: ['operatore'] },
     { href: '/dashboard/mia-azienda', label: 'La mia Azienda', icon: Building2, roles: ['operatore'] },
+{ href: '/dashboard/mie-prenotazioni', label: 'Le mie Prenotazioni', icon: Calendar, roles: ['operatore'] },
     { href: '/dashboard/skipper', label: 'I miei Skipper', icon: UserCircle, roles: ['operatore'] },
   ]
 
@@ -66,6 +67,7 @@ function DashboardLayoutContent({
     { href: '/dashboard/skipper', label: 'Skipper', icon: UserCircle },
     { href: '/dashboard/clienti', label: 'Clienti', icon: Users },
     { href: '/dashboard/fornitori', label: 'Fornitori', icon: Building2 },
+    { href: '/dashboard/affiliati', label: 'Affiliati', icon: Users2 },
     { href: '/dashboard/chatbot-leads', label: 'Chatbot Leads', icon: MessageSquare },
     { href: '/dashboard/amministratori', label: 'Gestione Utenti', icon: ShieldCheck },
   ]
