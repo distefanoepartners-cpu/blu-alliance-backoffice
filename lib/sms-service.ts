@@ -30,7 +30,7 @@ export async function sendSms(
     const phone = formatPhone(to)
     const result = await client.messages.create({
       body,
-      from: fromNumber,
+      from: 'BluAlliance',
       to: phone,
     })
     console.log(`✅ [SMS] Inviato a ${phone}: ${result.sid}`)
@@ -41,8 +41,8 @@ export async function sendSms(
   }
 }
 
-/**
- * Invia SMS prenotazione al fornitore
+ /**
+ * Invia SMS prenotazione al fornitore (supporta secondo numero)
  */
 export async function sendBookingSmsToFornitore(
   telefono: string,
@@ -59,6 +59,9 @@ export async function sendBookingSmsToFornitore(
     prezzoTotale: number
     caparra: number
     noteCliente?: string
+    // ⭐ Secondo numero opzionale
+    telefono_2?: string
+    telefono_2_nome?: string
   }
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const saldo = data.prezzoTotale - data.caparra
@@ -80,9 +83,18 @@ export async function sendBookingSmsToFornitore(
 
   console.log(`📱 [SMS] Notifica a ${ragioneSociale} (${telefono})`)
 
-  return sendSms(telefono, message)
-}
+  // Invia al numero principale
+  const result = await sendSms(telefono, message)
 
+  // ⭐ Invia al secondo numero se presente
+  if (data.telefono_2) {
+    const label = data.telefono_2_nome ? ` (${data.telefono_2_nome})` : ''
+    console.log(`📱 [SMS] Notifica secondo numero${label}: ${data.telefono_2}`)
+    await sendSms(data.telefono_2, message)
+  }
+
+  return result
+}
 /**
  * SMS di cancellazione al fornitore
  */
@@ -93,6 +105,9 @@ export async function sendCancellazioneSmsToFornitore(
     barcaNome: string
     dataServizio: string
     motivo?: string
+    // ⭐ aggiungi:
+    telefono_2?: string
+    telefono_2_nome?: string
   }
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const message = [
@@ -104,7 +119,12 @@ export async function sendCancellazioneSmsToFornitore(
     data.motivo ? `📝 Motivo: ${data.motivo}` : '',
   ].filter(Boolean).join('\n')
 
-  return sendSms(telefono, message)
+  // ⭐ Invia a entrambi i numeri
+  const result = await sendSms(telefono, message)
+  if (data.telefono_2) {
+    await sendSms(data.telefono_2, message)
+  }
+  return result
 }
 
 function formatDate(dateStr: string): string {

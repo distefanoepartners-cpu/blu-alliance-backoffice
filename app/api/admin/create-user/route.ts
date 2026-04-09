@@ -17,11 +17,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Campi obbligatori mancanti' }, { status: 400 })
     }
 
-    // Crea utente in Supabase Auth con email già confermata (nessuna email di verifica)
+    // Crea utente in Supabase Auth con email già confermata
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true, // ← account subito attivo, nessuna conferma necessaria
+      email_confirm: true,
       user_metadata: { nome, cognome }
     })
 
@@ -36,8 +36,8 @@ export async function POST(request: NextRequest) {
       throw new Error('Errore nella creazione utente')
     }
 
-    // Inserisce nella tabella amministratori
-    const { error: adminError } = await supabaseAdmin
+    // Inserisce nella tabella amministratori e recupera l'id
+    const { data: adminData, error: adminError } = await supabaseAdmin
       .from('amministratori')
       .insert([{
         user_id: authData.user.id,
@@ -48,6 +48,8 @@ export async function POST(request: NextRequest) {
         fornitore_id: ruolo === 'operatore' ? (fornitore_id || null) : null,
         attivo: true
       }])
+      .select('id')
+      .single()
 
     if (adminError) {
       // Rollback: elimina l'utente auth se l'insert fallisce
@@ -55,7 +57,11 @@ export async function POST(request: NextRequest) {
       throw adminError
     }
 
-    return NextResponse.json({ success: true, userId: authData.user.id })
+    return NextResponse.json({
+      success: true,
+      userId: authData.user.id,
+      amministratore_id: adminData?.id  // usato dalla pagina per salvare la password temp
+    })
 
   } catch (error: any) {
     console.error('Errore creazione utente:', error)

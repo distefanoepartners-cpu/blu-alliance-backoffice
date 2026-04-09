@@ -8,6 +8,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -26,7 +28,7 @@ export async function POST(request: NextRequest) {
         *,
         clienti(nome, cognome, email, telefono),
         servizi(nome, descrizione, tipo),
-        imbarcazioni(nome, tipo, categoria, fornitore_id, fornitori(ragione_sociale, email, telefono))
+        imbarcazioni(nome, tipo, categoria, fornitore_id, fornitori(ragione_sociale, email, telefono, telefono_2, telefono_2_nome))
       `)
       .eq('id', prenotazioneId)
       .single()
@@ -59,6 +61,7 @@ export async function POST(request: NextRequest) {
     console.log('✅ [send-confirmation] Email cliente inviata a:', prenotazione.clienti.email)
 
     // ── 2. CC a booking@blualliancegroup.com ─────────────────
+    await delay(600) // Resend rate limit: max 2 req/sec
     await sendEmail({
       to: 'booking@blualliancegroup.com',
       subject: `[COPIA] ${emailCliente.subject}`,
@@ -67,6 +70,7 @@ export async function POST(request: NextRequest) {
     console.log('✅ [send-confirmation] Copia inviata a booking@blualliancegroup.com')
 
     // ── 3. NOTIFICA FORNITORE (opzionale o automatica) ────────
+    await delay(600) // Resend rate limit
     const fornitore = prenotazione.imbarcazioni?.fornitori
     const inviaAlFornitore = notificaFornitore !== false && fornitore?.email
 
@@ -106,6 +110,8 @@ export async function POST(request: NextRequest) {
             prezzoTotale: Number(prenotazione.prezzo_totale || 0),
             caparra: Number(prenotazione.caparra_ricevuta || prenotazione.importo_pagato || 0),
             noteCliente: prenotazione.note_cliente || undefined,
+            telefono_2: fornitore.telefono_2 || undefined,
+            telefono_2_nome: fornitore.telefono_2_nome || undefined,
           }
         )
         fornitoreSmsInviato = smsResult.success
@@ -432,7 +438,12 @@ function generateEmailFornitore(prenotazione: any) {
                     <tr><td style="font-weight:600;color:#666;">Ora imbarco</td><td style="color:#111;">${ora}</td></tr>
                     <tr><td style="font-weight:600;color:#666;">Porto</td><td style="color:#111;">${porto}</td></tr>
                     <tr><td style="font-weight:600;color:#666;">Persone</td><td style="color:#111;">${prenotazione.numero_persone || '-'}</td></tr>
-                  </table>
+                  <tr><td style="font-weight:600;color:#666;">Persone</td><td style="color:#111;">${prenotazione.numero_persone || '-'}</td></tr>
+                <tr><td style="font-weight:600;color:#666;">Prezzo Totale</td><td style="color:#111;font-weight:700;">€${Number(prenotazione.prezzo_totale || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}</td></tr>
+                ${Number(prenotazione.caparra_ricevuta || prenotazione.importo_pagato || 0) > 0 ? `<tr><td style="font-weight:600;color:#666;">Acconto Ricevuto</td><td style="color:#28a745;font-weight:700;">€${Number(prenotazione.caparra_ricevuta || prenotazione.importo_pagato || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}</td></tr>` : ''}
+                ${(Number(prenotazione.prezzo_totale || 0) - Number(prenotazione.caparra_ricevuta || prenotazione.importo_pagato || 0)) > 0 ? `<tr><td style="font-weight:600;color:#666;">Saldo da Incassare</td><td style="color:#856404;font-weight:700;">€${(Number(prenotazione.prezzo_totale || 0) - Number(prenotazione.caparra_ricevuta || prenotazione.importo_pagato || 0)).toLocaleString('it-IT', { minimumFractionDigits: 2 })}</td></tr>` : ''}
+                </table>
+                     
                 </td></tr>
               </table>
 

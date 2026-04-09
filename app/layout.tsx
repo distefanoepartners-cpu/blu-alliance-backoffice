@@ -40,15 +40,23 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <script dangerouslySetInnerHTML={{ __html: `
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js');
-          }
-        `}} />
       </head>
       <body className={inter.className}>
         {children}
         <Toaster position="top-right" />
+        <script dangerouslySetInnerHTML={{ __html: `
+          // Forza aggiornamento SW e pulisci cache
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              regs.forEach(function(reg) {
+                reg.update();
+              });
+            });
+            caches.keys().then(function(names) {
+              names.forEach(function(name) { caches.delete(name); });
+            });
+          }
+        `}} />
       </body>
     </html>
   );

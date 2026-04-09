@@ -69,6 +69,8 @@ export default function MiaAziendaPage() {
           nome_referente: formData.nome_referente || null,
           email: formData.email || null,
           telefono: formData.telefono || null,
+          telefono_2: formData.telefono_2 || null,
+          telefono_2_nome: formData.telefono_2_nome || null,
           pec: formData.pec || null,
           partita_iva: formData.partita_iva || null,
           codice_fiscale: formData.codice_fiscale || null,
@@ -172,6 +174,13 @@ export default function MiaAziendaPage() {
             </span>
           </div>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900">La mia Azienda</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">La mia Azienda</h1>
+        <button
+          onClick={() => router.push('/dashboard/mie-prenotazioni')}
+          className="mt-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium text-sm inline-block"
+        >
+          📋 Le mie Prenotazioni
+        </button>
           <p className="text-gray-500 mt-1 text-sm">🏢 {fornitore.ragione_sociale}</p>
         </div>
         {!editing ? (
@@ -242,6 +251,36 @@ export default function MiaAziendaPage() {
             {field('Nome Referente', 'nome_referente')}
             {field('Email', 'email', 'email')}
             {field('Telefono', 'telefono', 'tel')}
+            {/* Secondo numero */}
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Secondo Telefono <span className="text-xs text-gray-400">(es. Skipper, Armatore)</span>
+              </label>
+              {editing ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="tel"
+                    value={formData.telefono_2 || ''}
+                    onChange={(e) => setFormData((p: any) => ({ ...p, telefono_2: e.target.value }))}
+                    placeholder="Numero telefono"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  />
+                  <input
+                    type="text"
+                    value={formData.telefono_2_nome || ''}
+                    onChange={(e) => setFormData((p: any) => ({ ...p, telefono_2_nome: e.target.value }))}
+                    placeholder="Es: Skipper Mario / Armatore"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              ) : (
+                <div className="text-sm text-gray-900 font-medium py-2">
+                  {fornitore.telefono_2
+                    ? <>{fornitore.telefono_2}{fornitore.telefono_2_nome ? <span className="text-gray-500 ml-1">({fornitore.telefono_2_nome})</span> : ''}</>
+                    : <span className="text-gray-300 italic">—</span>}
+                </div>
+              )}
+            </div>
             {field('PEC', 'pec', 'email')}
           </div>
         </div>

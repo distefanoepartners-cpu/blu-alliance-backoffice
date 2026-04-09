@@ -571,7 +571,7 @@ export default function MieBarchePage() {
       {/* ═══ MODAL MODIFICA / CREA BARCA ═══ */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-xl max-w-2xl w-full my-8">
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
             {/* Header */}
             <div className="sticky top-0 z-10 bg-white p-6 border-b flex items-center justify-between rounded-t-xl">
               <div>
@@ -585,7 +585,7 @@ export default function MieBarchePage() {
               <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-5">
+            <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
               {/* Immagine */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Immagine</label>

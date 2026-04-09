@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import { format } from 'date-fns'
 
 interface Fornitore {
   id: string
@@ -10,6 +11,8 @@ interface Fornitore {
   nome_referente?: string
   email?: string
   telefono?: string
+  telefono_2?: string
+  telefono_2_nome?: string
   pec?: string
   partita_iva?: string
   codice_fiscale?: string
@@ -42,13 +45,19 @@ export default function FornitoriPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [filtroStato, setFiltroStato] = useState<string>('tutti')
-
+  const [showEstrattoModal, setShowEstrattoModal] = useState(false)
+  const [fornitoreSelezionato, setFornitoreSelezionato] = useState<any>(null)
+  const [meseSelezionato, setMeseSelezionato] = useState(format(new Date(), 'yyyy-MM'))
+  const [generandoPdf, setGenerandoPdf] = useState(false)
+  const [inviandoEmail, setInviandoEmail] = useState(false)
   const emptyForm: Fornitore = {
     id: '',
     ragione_sociale: '',
     nome_referente: '',
     email: '',
     telefono: '',
+    telefono_2: '',
+    telefono_2_nome: '',
     pec: '',
     partita_iva: '',
     codice_fiscale: '',
@@ -92,7 +101,36 @@ export default function FornitoriPage() {
         .order('ragione_sociale')
 
       if (error) throw error
-      setFornitori(data || [])
+
+      // ⭐ Carica prenotazioni NS3000 (imbarcazione_id = null, source = 'ns3000')
+      const { data: ns3000Prenotazioni } = await supabase
+        .from('prenotazioni')
+        .select('id, prezzo_totale, caparra_ricevuta, saldo_ricevuto, stato, data_servizio')
+        .is('imbarcazione_id', null)
+        .eq('source', 'ns3000')
+        .neq('stato', 'cancellata')
+
+      // ⭐ Aggiungi le prenotazioni NS3000 al fornitore NS3000
+      const NS3000_FORNITORE_ID = '2d78fca2-f474-4c44-8443-44c75924d5c3'
+      const fornitoriConNs3000 = (data || []).map(f => {
+        if (f.id === NS3000_FORNITORE_ID && ns3000Prenotazioni?.length) {
+          // Aggiungi una imbarcazione virtuale con le prenotazioni NS3000
+          const imbarcazioneVirtuale = {
+            id: 'ns3000-virtual',
+            nome: 'Barche NS3000',
+            tipo: 'ns3000',
+            categoria: 'ns3000',
+            prenotazioni: ns3000Prenotazioni
+          }
+          return {
+            ...f,
+            imbarcazioni: [...(f.imbarcazioni || []), imbarcazioneVirtuale]
+          }
+        }
+        return f
+      })
+
+      setFornitori(fornitoriConNs3000)
     } catch (error: any) {
       console.error('Errore:', error)
       toast.error('Errore nel caricamento dei fornitori')
@@ -115,6 +153,8 @@ export default function FornitoriPage() {
       nome_referente: f.nome_referente || '',
       email: f.email || '',
       telefono: f.telefono || '',
+      telefono_2: f.telefono_2 || '',
+      telefono_2_nome: f.telefono_2_nome || '',
       pec: f.pec || '',
       partita_iva: f.partita_iva || '',
       codice_fiscale: f.codice_fiscale || '',
@@ -144,6 +184,8 @@ export default function FornitoriPage() {
         nome_referente: formData.nome_referente || null,
         email: formData.email || null,
         telefono: formData.telefono || null,
+        telefono_2: formData.telefono_2 || null,
+        telefono_2_nome: formData.telefono_2_nome || null,
         pec: formData.pec || null,
         partita_iva: formData.partita_iva || null,
         codice_fiscale: formData.codice_fiscale || null,
@@ -193,7 +235,110 @@ export default function FornitoriPage() {
       toast.error('Errore nell\'eliminazione')
     }
   }
+function openEstrattoModal(fornitore: any) {
+    setFornitoreSelezionato(fornitore)
+    setMeseSelezionato(format(new Date(), 'yyyy-MM'))
+    setShowEstrattoModal(true)
+  }
 
+  async function generaEstrattoConto() {
+    if (!fornitoreSelezionato) return
+    setGenerandoPdf(true)
+    try {
+      const inizioMese = meseSelezionato + '-01'
+      const dataInizio = new Date(inizioMese)
+      const dataFine = new Date(dataInizio.getFullYear(), dataInizio.getMonth() + 1, 0)
+      const fineMese = format(dataFine, 'yyyy-MM-dd')
+
+      const { data: prenotazioni, error } = await supabase
+        .from('vista_vendite_fornitori')
+        .select('*')
+        .eq('fornitore_id', fornitoreSelezionato.id)
+        .gte('data_servizio', inizioMese)
+        .lte('data_servizio', fineMese)
+        .order('data_servizio')
+
+      if (error) throw error
+
+      const totali = {
+        fatturato: prenotazioni?.reduce((sum: number, p: any) => sum + Number(p.prezzo_totale || 0), 0) || 0,
+        commissioni: 0,
+        netto: 0
+      }
+      totali.commissioni = totali.fatturato * ((fornitoreSelezionato.percentuale_commissione || 25) / 100)
+      totali.netto = totali.fatturato - totali.commissioni
+
+      const response = await fetch('/api/genera-estratto-conto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fornitore: fornitoreSelezionato, mese: meseSelezionato, prenotazioni: prenotazioni || [], totali })
+      })
+
+      if (!response.ok) throw new Error('Errore generazione PDF')
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `estratto-conto-${fornitoreSelezionato.ragione_sociale.replace(/\s+/g, '-')}-${meseSelezionato}.pdf`
+      a.click()
+      window.URL.revokeObjectURL(url)
+      toast.success('PDF generato e scaricato!')
+    } catch (error: any) {
+      toast.error('Errore: ' + error.message)
+    } finally {
+      setGenerandoPdf(false)
+    }
+  }
+
+  async function inviaEstrattoConto() {
+    if (!fornitoreSelezionato) return
+    if (!fornitoreSelezionato.email) {
+      toast.error('Il fornitore non ha un indirizzo email configurato')
+      return
+    }
+    setInviandoEmail(true)
+    try {
+      const inizioMese = meseSelezionato + '-01'
+      const dataInizio = new Date(inizioMese)
+      const dataFine = new Date(dataInizio.getFullYear(), dataInizio.getMonth() + 1, 0)
+      const fineMese = format(dataFine, 'yyyy-MM-dd')
+
+      const { data: prenotazioni, error } = await supabase
+        .from('vista_vendite_fornitori')
+        .select('*')
+        .eq('fornitore_id', fornitoreSelezionato.id)
+        .gte('data_servizio', inizioMese)
+        .lte('data_servizio', fineMese)
+        .order('data_servizio')
+
+      if (error) throw error
+
+      const totali = {
+        fatturato: prenotazioni?.reduce((sum: number, p: any) => sum + Number(p.prezzo_totale || 0), 0) || 0,
+        commissioni: 0,
+        netto: 0
+      }
+      totali.commissioni = totali.fatturato * ((fornitoreSelezionato.percentuale_commissione || 25) / 100)
+      totali.netto = totali.fatturato - totali.commissioni
+
+      const response = await fetch('/api/invia-estratto-conto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fornitore: fornitoreSelezionato, mese: meseSelezionato, prenotazioni: prenotazioni || [], totali })
+      })
+
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Errore invio email')
+
+      toast.success(`Email inviata a ${fornitoreSelezionato.email}!`)
+      setShowEstrattoModal(false)
+    } catch (error: any) {
+      toast.error('Errore: ' + error.message)
+    } finally {
+      setInviandoEmail(false)
+    }
+  }
   function calcolaStatistiche(fornitore: Fornitore) {
     const imbarcazioni = fornitore.imbarcazioni || []
     const prenotazioniValide = imbarcazioni.flatMap(imb =>
@@ -336,6 +481,9 @@ export default function FornitoriPage() {
                         {fornitore.nome_referente && <span>👤 {fornitore.nome_referente}</span>}
                         {fornitore.email && <span>📧 {fornitore.email}</span>}
                         {fornitore.telefono && <span>📱 {fornitore.telefono}</span>}
+                        {fornitore.telefono_2 && (
+                        <span>📱 {fornitore.telefono_2}{fornitore.telefono_2_nome ? ` (${fornitore.telefono_2_nome})` : ''}</span>
+                      )}
                         {fornitore.base_nautica && <span>⚓ {fornitore.base_nautica}</span>}
                         {fornitore.capitaneria_porto && <span>🏛️ C.P. {fornitore.capitaneria_porto}</span>}
                       </div>
@@ -478,6 +626,9 @@ export default function FornitoriPage() {
 
                     {/* Azioni */}
                     <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 flex gap-2 justify-end">
+                      <button onClick={() => openEstrattoModal(fornitore)} className="px-4 py-2 text-sm bg-green-50 text-green-600 rounded-lg hover:bg-green-100 font-medium">
+                        📄 Estratto Conto
+                      </button>
                       <button onClick={() => handleEdit(fornitore)} className="px-4 py-2 text-sm bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium">
                         ✏️ Modifica
                       </button>
@@ -515,6 +666,30 @@ export default function FornitoriPage() {
                   {field('Nome Referente', 'nome_referente')}
                   {field('Email', 'email', 'email')}
                   {field('Telefono', 'telefono', 'tel')}
+                  {/* Secondo numero di telefono */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Secondo Telefono <span className="text-xs text-gray-400">(es. Skipper, Armatore)</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="tel"
+                      value={formData.telefono_2 || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, telefono_2: e.target.value }))}
+                      placeholder="Numero telefono"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                    <input
+                      type="text"
+                      value={formData.telefono_2_nome || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, telefono_2_nome: e.target.value }))}
+                      placeholder="Es: Skipper Mario / Armatore"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                  {field('PEC', 'pec', 'email')}
                   {field('PEC', 'pec', 'email')}
                 </div>
               </div>
@@ -654,6 +829,53 @@ export default function FornitoriPage() {
               </button>
               <button onClick={() => handleDelete(showDeleteConfirm)} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm">
                 Elimina
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Estratto Conto */}
+      {showEstrattoModal && fornitoreSelezionato && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">📄 Estratto Conto</h2>
+                <p className="text-sm text-gray-500 mt-0.5">{fornitoreSelezionato.ragione_sociale}</p>
+              </div>
+              <button onClick={() => setShowEstrattoModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Mese</label>
+              <input
+                type="month"
+                value={meseSelezionato}
+                onChange={(e) => setMeseSelezionato(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+
+            {fornitoreSelezionato.email && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm">
+                <span className="text-blue-700">📧 Email: <strong>{fornitoreSelezionato.email}</strong></span>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={generaEstrattoConto}
+                disabled={generandoPdf}
+                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+              >
+                {generandoPdf ? '⏳ Generazione...' : '📥 Scarica PDF'}
+              </button>
+              <button
+                onClick={inviaEstrattoConto}
+                disabled={inviandoEmail || !fornitoreSelezionato.email}
+                className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-medium"
+              >
+                {inviandoEmail ? '⏳ Invio...' : '📧 Invia Email'}
               </button>
             </div>
           </div>

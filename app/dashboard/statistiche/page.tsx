@@ -75,9 +75,33 @@ export default function StatistichePage() {
       const { data: fornitoriData, error: fornitoriError } = await query
 
       if (fornitoriError) throw fornitoriError
+      // ⭐ Carica prenotazioni NS3000 (imbarcazione_id = null)
+      const { data: ns3000Prenotazioni } = await supabase
+        .from('prenotazioni')
+        .select('id, prezzo_totale, caparra_ricevuta, saldo_ricevuto, stato, data_servizio')
+        .is('imbarcazione_id', null)
+        .eq('source', 'ns3000')
+        .neq('stato', 'cancellata')
+
+      const NS3000_FORNITORE_ID = '2d78fca2-f474-4c44-8443-44c75924d5c3'
+      const fornitoriConNs3000 = (fornitoriData || []).map(f => {
+        if (f.id === NS3000_FORNITORE_ID && ns3000Prenotazioni?.length) {
+          return {
+            ...f,
+            imbarcazioni: [...(f.imbarcazioni || []), {
+              id: 'ns3000-virtual',
+              nome: 'Barche NS3000',
+              tipo: 'ns3000',
+              categoria: 'ns3000',
+              prenotazioni: ns3000Prenotazioni
+            }]
+          }
+        }
+        return f
+      })
 
       // Elabora statistiche fornitori
-      const fornitoriStats = (fornitoriData || []).map(fornitore => {
+      const fornitoriStats = fornitoriConNs3000.map(fornitore => {
         const imbarcazioni = fornitore.imbarcazioni || []
         
         // Filtra prenotazioni valide nel periodo

@@ -357,11 +357,15 @@ export default function ServiziPage() {
               {/* Badge tipo */}
               <div className="flex items-center gap-2 mb-3">
                 <span className={`px-3 py-1 text-xs font-medium rounded-full ${
-                  servizio.tipo === 'tour' ? 'bg-blue-100 text-blue-700' :
-                  servizio.tipo === 'locazione' ? 'bg-green-100 text-green-700' :
-                  'bg-purple-100 text-purple-700'
-                }`}>
-                  {servizio.tipo === 'tour' ? 'Tour' : servizio.tipo === 'locazione' ? 'Noleggio' : 'Taxi Mare'}
+                servizio.tipo === 'tour' ? 'bg-blue-100 text-blue-700' :
+                servizio.tipo === 'locazione' ? 'bg-green-100 text-green-700' :
+                servizio.tipo === 'tour_collettivo' ? 'bg-teal-100 text-teal-700' :
+                'bg-purple-100 text-purple-700'
+              }`}>
+                  {servizio.tipo === 'tour' ? 'Tour' :
+                  servizio.tipo === 'locazione' ? 'Noleggio' :
+                  servizio.tipo === 'tour_collettivo' ? 'Tour Collettivo' :
+                  'Taxi Mare'}
                 </span>
                 <span className={`px-2 py-1 text-xs rounded-full ${
                   servizio.attivo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'

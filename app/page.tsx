@@ -24,6 +24,8 @@ export default function LoginPage() {
       if (error) throw error
 
       toast.success('Accesso effettuato!')
+      // Attendi che AuthProvider processi la sessione
+      await new Promise(resolve => setTimeout(resolve, 800))
       router.push('/dashboard')
     } catch (error: any) {
       toast.error(error.message || 'Errore durante l\'accesso')

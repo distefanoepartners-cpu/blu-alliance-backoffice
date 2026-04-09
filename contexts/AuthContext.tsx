@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useMemo, useCallback, useRef, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -30,101 +30,161 @@ const AuthContext = createContext<AuthContextType>({
   logout: async () => {},
 })
 
+// Cache modulo — sopravvive ai remount
+let _cachedUser: AuthUser | null = null
+let _ready = false
+
+async function loadUserData(authUser: any): Promise<AuthUser> {
+  try {
+    const { data, error } = await supabase
+      .from('amministratori')
+      .select('id, email, nome, cognome, ruolo, fornitore_id, attivo')
+      .eq('user_id', authUser.id)
+      .maybeSingle()
+
+    if (error) console.error('[Auth] Errore lettura amministratori:', error)
+
+    if (data && data.attivo !== false) {
+      return {
+        id: authUser.id,
+        email: data.email || authUser.email || '',
+        full_name: `${data.nome || ''} ${data.cognome || ''}`.trim() || authUser.email,
+        role: data.ruolo || 'operatore',
+        fornitore_id: data.fornitore_id || null,
+      }
+    }
+  } catch (e) {
+    console.error('[Auth] loadUser error:', e)
+  }
+
+  return {
+    id: authUser.id,
+    email: authUser.email || '',
+    full_name: authUser.email,
+    role: 'operatore',
+    fornitore_id: null,
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [user, setUser] = useState<AuthUser | null>(_cachedUser)
+  const [loading, setLoading] = useState(!_ready)
   const router = useRouter()
-  const initialized = useRef(false)
+  const mountedRef = useRef(true)
 
   useEffect(() => {
-    if (initialized.current) return
-    initialized.current = true
+    mountedRef.current = true
 
-    async function init() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session?.user) {
-          await loadUser(session.user)
-        }
-      } catch (e) {
-        console.error('Auth init error:', e)
-      } finally {
-        setLoading(false)
-      }
+    // ═══════════════════════════════════════════════
+    // Se già pronto da navigazione precedente → usa cache
+    // ═══════════════════════════════════════════════
+    if (_ready && _cachedUser) {
+      setUser(_cachedUser)
+      setLoading(false)
     }
 
-    init()
-
+    // ═══════════════════════════════════════════════
+    // UNICA FONTE DI VERITÀ: onAuthStateChange
+    // - INITIAL_SESSION: primo caricamento pagina
+    // - SIGNED_IN: dopo login
+    // - SIGNED_OUT: dopo logout
+    // - TOKEN_REFRESHED: refresh token automatico
+    //
+    // NON usiamo getSession() perché si blocca
+    // su Supabase free tier (cold start 5-10s)
+    // ═══════════════════════════════════════════════
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mountedRef.current) return
+      console.log('[Auth] onAuthStateChange:', event)
+
       if (event === 'SIGNED_OUT') {
+        _cachedUser = null
+        _ready = true
         setUser(null)
+        setLoading(false)
         return
       }
+
+      // Qualsiasi evento con sessione valida → carica utente
       if (session?.user) {
-        await loadUser(session.user)
+        // Carica dati completi con timeout 5s
+        const timeoutPromise = new Promise<null>(resolve => setTimeout(() => resolve(null), 5000))
+        const userPromise = loadUserData(session.user)
+        
+        const result = await Promise.race([userPromise, timeoutPromise])
+        
+        const authUser: AuthUser = result || {
+          id: session.user.id,
+          email: session.user.email || '',
+          full_name: session.user.email || '',
+          role: 'admin',
+          fornitore_id: null,
+        }
+        
+        _cachedUser = authUser
+        _ready = true
+        if (mountedRef.current) {
+          setUser(authUser)
+          setLoading(false)
+        }
+        
+        // Se era il timeout, aggiorna in background quando arriva
+        if (!result) {
+          userPromise.then(fullUser => {
+            _cachedUser = fullUser
+            if (mountedRef.current) setUser(fullUser)
+          }).catch(() => {})
+        }
+        return
       }
+
+      // Evento senza sessione (es. INITIAL_SESSION senza login)
+      _ready = true
+      if (mountedRef.current) setLoading(false)
     })
 
-    return () => subscription.unsubscribe()
-  }, [])
-
-  async function loadUser(authUser: any) {
-    try {
-      const { data, error } = await supabase
-        .from('amministratori')
-        .select('id, email, nome, cognome, ruolo, fornitore_id, attivo')
-        .eq('user_id', authUser.id)
-        .maybeSingle()
-
-      if (error) console.error('Errore lettura amministratori:', error)
-
-      if (data && data.attivo !== false) {
-        // DEBUG — rimuovere dopo test
-        console.log('[Auth] Utente trovato:', data.ruolo, 'fornitore_id:', data.fornitore_id)
-        setUser({
-          id: authUser.id,
-          email: data.email || authUser.email || '',
-          full_name: `${data.nome || ''} ${data.cognome || ''}`.trim() || authUser.email,
-          role: data.ruolo || 'operatore',
-          fornitore_id: data.fornitore_id || null,
-        })
-      } else {
-        console.log('[Auth] Utente NON trovato in amministratori o disattivato, data:', data)
-        setUser({
-          id: authUser.id,
-          email: authUser.email || '',
-          full_name: authUser.email,
-          role: 'operatore',
-          fornitore_id: null,
-        })
+    // Safety timeout — se il listener non emette nulla in 10s
+    const timeoutId = setTimeout(() => {
+      if (mountedRef.current && !_ready) {
+        console.warn('[Auth] Safety timeout 10s — nessun evento ricevuto')
+        _ready = true
+        setLoading(false)
       }
-    } catch (e) {
-      console.error('loadUser error:', e)
-      setUser({
-        id: authUser.id,
-        email: authUser.email || '',
-        full_name: authUser.email,
-        role: 'operatore',
-        fornitore_id: null,
-      })
-    }
-  }
+    }, 10000)
 
-  async function logout() {
-    await supabase.auth.signOut()
+    return () => {
+      mountedRef.current = false
+      clearTimeout(timeoutId)
+      subscription.unsubscribe()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const logout = useCallback(async () => {
+    console.log('[Auth] Logout...')
+    _cachedUser = null
+    _ready = false
     setUser(null)
+
+    try {
+      await supabase.auth.signOut()
+    } catch (e) {
+      console.error('[Auth] signOut error:', e)
+    }
+
     router.push('/')
-  }
+  }, [router])
+
+  const value = useMemo(() => ({
+    user,
+    loading,
+    isAdmin: user?.role === 'admin' || false,
+    isOperatore: user?.role === 'operatore' || false,
+    fornitoreId: user?.fornitore_id || null,
+    logout,
+  }), [user, loading, logout])
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      loading,
-      isAdmin: user?.role === 'admin',
-      isOperatore: user?.role === 'operatore',
-      fornitoreId: user?.fornitore_id || null,
-      logout,
-    }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )

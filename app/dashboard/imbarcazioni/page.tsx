@@ -74,7 +74,7 @@ export default function ImbarcazioniPage() {
       const { data: imbarcazioniData } = await supabase
         .from('imbarcazioni')
         .select('*')
-        .order('nome')
+        .order('ordine').order('nome')
 
       // Carica servizi CON prezzi per categoria
       const { data: serviziData } = await supabase
@@ -637,7 +637,7 @@ export default function ImbarcazioniPage() {
       {/* Modal Crea/Modifica - FIX HEADER */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-xl max-w-2xl w-full my-8">
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
             {/* FIX: Header sticky con sfondo bianco e z-index */}
             <div className="sticky top-0 z-10 bg-white p-6 border-b flex items-center justify-between rounded-t-xl">
               <h2 className="text-2xl font-bold text-gray-900">
@@ -648,7 +648,7 @@ export default function ImbarcazioniPage() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
               {/* Immagine */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Immagine</label>
