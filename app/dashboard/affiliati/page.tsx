@@ -113,8 +113,8 @@ export default function AffiliatiPage() {
       const { data, error } = await supabase
         .from('v_commissioni_affiliati')
         .select('*')
-        .gte('mese', inizioMese)
-        .lte('mese', fineMese)
+        .gte('mese', meseCommissioni + '-01')
+        .lte('mese', meseCommissioni + '-31')
       if (error) throw error
       setCommissioni(data || [])
     } catch (e: any) {
