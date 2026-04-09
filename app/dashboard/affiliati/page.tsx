@@ -84,7 +84,12 @@ export default function AffiliatiPage() {
   const [formData, setFormData] = useState<Omit<Affiliato, 'id' | 'codice'>>(emptyForm)
   const [copiato, setCopiato] = useState<string | null>(null)
 
-  useEffect(() => { loadAffiliati() }, [])
+  useEffect(() => { 
+    loadAffiliati()
+    // Fallback: se dopo 10 secondi è ancora in loading, sblocca
+    const timeout = setTimeout(() => setLoading(false), 10000)
+    return () => clearTimeout(timeout)
+  }, [])
   useEffect(() => { if (activeTab === 'commissioni') loadCommissioni() }, [activeTab, meseCommissioni])
 
   async function loadAffiliati() {
@@ -97,7 +102,9 @@ export default function AffiliatiPage() {
       if (error) throw error
       setAffiliati(data || [])
     } catch (e: any) {
+      console.error('Errore caricamento affiliati:', e)
       toast.error('Errore nel caricamento affiliati')
+      setAffiliati([])
     } finally {
       setLoading(false)
     }
