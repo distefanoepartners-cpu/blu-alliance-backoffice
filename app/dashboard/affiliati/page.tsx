@@ -120,9 +120,14 @@ export default function AffiliatiPage() {
       const { data, error } = await supabase
         .from('v_commissioni_affiliati')
         .select('*')
-        .ilike('mese', meseCommissioni + '%')
       if (error) throw error
-      setCommissioni(data || [])
+      // Filtra lato client per mese
+      const filtered = (data || []).filter(c => {
+        const meseCom = new Date(c.mese)
+        return meseCom.getFullYear() === dataInizio.getFullYear() &&
+               meseCom.getMonth() === dataInizio.getMonth()
+      })
+      setCommissioni(filtered)
     } catch (e: any) {
       toast.error('Errore nel caricamento commissioni')
     }
