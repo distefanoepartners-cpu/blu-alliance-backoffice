@@ -628,7 +628,7 @@ export default function TourCollettivi() {
       const colorClass = isToday ? 'bg-blue-100 text-blue-700' : isWeekend ? 'bg-orange-50 text-gray-700' : 'text-gray-700'
       return (
         <th key={day.toISOString()} className={`${borderClass} ${colorClass} py-1 text-center font-semibold`}
-          style={{ width: '42px', minWidth: '42px' }}>
+          style={{ width: '36px', minWidth: '36px' }}>
           <div className="flex flex-col leading-tight">
             <span className="text-[9px] font-normal text-gray-400 uppercase">{format(day, 'EEEEE', { locale: it })}</span>
             <span className={`text-xs ${isToday ? 'font-bold' : ''}`}>{format(day, 'd')}</span>
@@ -694,17 +694,17 @@ export default function TourCollettivi() {
             <span className="text-xs text-blue-200">{imbarcazioni.length} barche</span>
           </div>
 
-          <table className="border-collapse" style={{ tableLayout: 'fixed', minWidth: `${180 + monthDays.length * 42}px` }}>
+          <table className="border-collapse" style={{ tableLayout: "fixed", minWidth: `${110 + monthDays.length * 36}px` }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-gray-50">
-                <th className="sticky left-0 z-20 bg-gray-100 border border-gray-200 px-2 py-2 text-left font-semibold text-gray-900 text-xs" style={{ width: '180px', minWidth: '180px' }}>Barca · Capienza</th>
+                <th className="sticky left-0 z-20 bg-gray-100 border border-gray-200 px-2 py-2 text-left font-semibold text-gray-900 text-xs" style={{ width: '110px', minWidth: '110px' }}>Barca · Capienza</th>
                 {renderDayHeaders('ba')}
               </tr>
             </thead>
             <tbody>
               {imbarcazioni.map((barca) => (
                 <tr key={barca.id} className="hover:bg-gray-50/50">
-                  <td className="sticky left-0 z-[5] bg-gray-50 border border-gray-200 px-2 py-1" style={{ width: '180px', minWidth: '180px' }}>
+                  <td className="sticky left-0 z-[5] bg-gray-50 border border-gray-200 px-2 py-1" style={{ width: '110px', minWidth: '110px' }}>
                     <div className="flex items-center justify-between gap-1">
                       <div className="min-w-0">
                         <div className="text-xs font-semibold text-gray-900 truncate" title={barca.nome}>{barca.nome}</div>
@@ -740,7 +740,7 @@ export default function TourCollettivi() {
                     const cellColor = getCellColorBA(info)
                     const pct = Math.round((info.pax / info.capienza) * 100)
                     return (
-                      <td key={`ba-${barca.id}-${day.toISOString()}`} className="border border-gray-100 p-0" style={{ width: '42px', minWidth: '42px' }}>
+                      <td key={`ba-${barca.id}-${day.toISOString()}`} className="border border-gray-100 p-0" style={{ width: '36px', minWidth: '36px' }}>
                         <button
                           onClick={() => {
                             if (info.bloccata_da_privato) { toast.error(`${barca.nome} impegnata con tour privato il ${format(day, 'd MMM', { locale: it })}`); return }
@@ -748,7 +748,7 @@ export default function TourCollettivi() {
                             else openNewBookingBA(barca, day)
                           }}
                           className={`w-full flex flex-col items-center justify-center border-l-2 transition-all ${cellColor} ${isToday ? 'ring-1 ring-inset ring-blue-300' : ''}`}
-                          style={{ height: '52px' }}
+                          style={{ height: '48px' }}
                           title={info.bloccata_da_privato ? 'Bloccata' : `${info.pax}/${info.capienza} pax`}
                         >
                           {info.bloccata_da_privato ? <span className="text-[10px] text-purple-600">🔒</span>
@@ -790,10 +790,10 @@ export default function TourCollettivi() {
               </div>
               {showNs3000 && (
                 ns3000CollectiveBoats.length > 0 ? (
-                  <table className="border-collapse" style={{ tableLayout: 'fixed', minWidth: `${180 + monthDays.length * 42}px` }}>
+                  <table className="border-collapse" style={{ tableLayout: "fixed", minWidth: `${110 + monthDays.length * 36}px` }}>
                     <thead>
                       <tr className="bg-indigo-50">
-                        <th className="sticky left-0 z-20 bg-indigo-100 border border-indigo-200 px-2 py-1.5 text-left font-semibold text-indigo-900 text-xs" style={{ width: '180px', minWidth: '180px' }}>Barca NS3000</th>
+                        <th className="sticky left-0 z-20 bg-indigo-100 border border-indigo-200 px-2 py-1.5 text-left font-semibold text-indigo-900 text-xs" style={{ width: '110px', minWidth: '110px' }}>Barca NS3000</th>
                         {renderDayHeaders('ns3000')}
                       </tr>
                     </thead>
@@ -802,7 +802,7 @@ export default function TourCollettivi() {
                         const utilizzo = Math.round((monthDays.filter(d => (ns3000CellMap[`${boat.boat_id}|${format(d, 'yyyy-MM-dd')}`]?.passengers_booked || 0) > 0).length / monthDays.length) * 100)
                         return (
                           <tr key={`ns-${boat.boat_id}`} className="hover:bg-indigo-50/50">
-                            <td className="sticky left-0 z-[5] bg-indigo-50 border border-gray-200 px-2 py-1" style={{ width: '180px', minWidth: '180px' }}>
+                            <td className="sticky left-0 z-[5] bg-indigo-50 border border-gray-200 px-2 py-1" style={{ width: '110px', minWidth: '110px' }}>
                               <div className="text-xs font-semibold text-indigo-900 truncate" title={boat.boat_name}>{boat.boat_name}</div>
                               <div className="text-[10px] text-indigo-500">
                                 {boat.capacity > 0 ? `${boat.capacity} pax` : ''}
@@ -827,7 +827,7 @@ export default function TourCollettivi() {
                               const capienza = cell?.capacity || boat.capacity
                               const cellPct = capienza > 0 ? Math.round((paxBooked / capienza) * 100) : 0
                               return (
-                                <td key={`ns-${boat.boat_id}-${day.toISOString()}`} className="border border-gray-100 p-0" style={{ width: '42px', minWidth: '42px' }}>
+                                <td key={`ns-${boat.boat_id}-${day.toISOString()}`} className="border border-gray-100 p-0" style={{ width: '36px', minWidth: '36px' }}>
                                   <button
                                     onClick={() => {
                                       if (cell && cell.passengers_booked > 0) {
@@ -838,7 +838,7 @@ export default function TourCollettivi() {
                                       }
                                     }}
                                     className={`w-full flex flex-col items-center justify-center border-l-2 transition-all ${cellColor} ${isToday ? 'ring-1 ring-inset ring-blue-300' : ''}`}
-                                    style={{ height: '52px' }}
+                                    style={{ height: '48px' }}
                                     title={cell ? `${paxBooked}/${capienza} pax · ${cell.service_name}` : `Disponibile`}
                                   >
                                     {paxBooked > 0 ? (
