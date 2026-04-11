@@ -43,6 +43,7 @@ useEffect(() => {
   const [selectedCell, setSelectedCell] = useState<{ imbarcazioneId: string; date: Date; imbarcazioneNome: string } | null>(null)
   const [motivoBlocco, setMotivoBlocco] = useState('')
   const [tipoBlocco, setTipoBlocco] = useState<'manutenzione' | 'prenotazione_esterna' | 'altro'>('altro')
+  const [dataFineBlocco, setDataFineBlocco] = useState('')
 
   const [contextMenu, setContextMenu] = useState<{
     x: number; y: number
@@ -349,17 +350,26 @@ useEffect(() => {
 
   async function creaBlocco() {
     if (!selectedCell) return
+    const dataInizioStr = format(selectedCell.date, 'yyyy-MM-dd')
+    const dataFineStr = dataFineBlocco || dataInizioStr
+    if (dataFineStr < dataInizioStr) {
+      toast.error('La data fine deve essere uguale o successiva alla data inizio')
+      return
+    }
     try {
       const { error } = await supabase.from('blocchi_imbarcazioni').insert([{
         imbarcazione_id: selectedCell.imbarcazioneId,
-        data_inizio: format(selectedCell.date, 'yyyy-MM-dd'),
-        data_fine: format(selectedCell.date, 'yyyy-MM-dd'),
+        data_inizio: dataInizioStr,
+        data_fine: dataFineStr,
         motivo: motivoBlocco || 'Indisponibilità',
         note: tipoBlocco
       }])
       if (error) throw error
-      toast.success('Blocco creato!')
+      const giorni = Math.round((new Date(dataFineStr).getTime() - new Date(dataInizioStr).getTime()) / 86400000) + 1
+      toast.success(`Blocco creato! ${giorni > 1 ? `${giorni} giorni bloccati.` : ''}`)
       setShowBloccoModal(false)
+      setDataFineBlocco('')
+      setMotivoBlocco('')
       loadData()
     } catch {
       toast.error('Errore nella creazione del blocco')
@@ -716,16 +726,47 @@ useEffect(() => {
           <div className="bg-white rounded-xl max-w-md w-full p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-bold text-gray-900">{isOperatore ? '📅 Gestisci Disponibilità' : 'Blocca Disponibilità'}</h2>
-                {isOperatore && <p className="text-xs text-gray-500 mt-0.5">Dichiara indisponibilità per questa data</p>}
+                <h2 className="text-lg font-bold text-gray-900">{isOperatore ? '📅 Gestisci Disponibilità' : '🚫 Blocca Disponibilità'}</h2>
+                {isOperatore && <p className="text-xs text-gray-500 mt-0.5">Dichiara indisponibilità per questo periodo</p>}
               </div>
               <button onClick={() => setShowBloccoModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
             </div>
             <div className="mb-4 bg-gray-50 rounded-lg p-3">
               <p className="text-sm text-gray-700"><strong>🚤 {selectedCell.imbarcazioneNome}</strong></p>
-              <p className="text-sm text-gray-600">📅 {format(selectedCell.date, 'EEEE dd MMMM yyyy', { locale: it })}</p>
             </div>
             <div className="space-y-4">
+              {/* Range date */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Dal</label>
+                  <input
+                    type="date"
+                    value={format(selectedCell.date, 'yyyy-MM-dd')}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Al</label>
+                  <input
+                    type="date"
+                    value={dataFineBlocco || format(selectedCell.date, 'yyyy-MM-dd')}
+                    min={format(selectedCell.date, 'yyyy-MM-dd')}
+                    onChange={(e) => setDataFineBlocco(e.target.value)}
+                    className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              {/* Anteprima durata */}
+              {(() => {
+                const fine = dataFineBlocco || format(selectedCell.date, 'yyyy-MM-dd')
+                const giorni = Math.round((new Date(fine).getTime() - selectedCell.date.getTime()) / 86400000) + 1
+                return giorni > 1 ? (
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-xs text-orange-700 font-medium">
+                    ⚠️ Verranno bloccati <strong>{giorni} giorni</strong> — da {format(selectedCell.date, 'dd MMM', { locale: it })} al {format(new Date(fine), 'dd MMM yyyy', { locale: it })}
+                  </div>
+                ) : null
+              })()}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Tipo Blocco</label>
                 <select value={tipoBlocco} onChange={(e) => setTipoBlocco(e.target.value as any)}
@@ -738,12 +779,12 @@ useEffect(() => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Motivo (opzionale)</label>
                 <textarea value={motivoBlocco} onChange={(e) => setMotivoBlocco(e.target.value)}
-                  placeholder="Es: Manutenzione motore..." className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows={3} />
+                  placeholder="Es: Manutenzione motore..." className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows={2} />
               </div>
             </div>
             <div className="flex gap-3 mt-5">
-              <button onClick={() => setShowBloccoModal(false)} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">Annulla</button>
-              <button onClick={creaBlocco} className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">🚫 Blocca</button>
+              <button onClick={() => { setShowBloccoModal(false); setDataFineBlocco('') }} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">Annulla</button>
+              <button onClick={creaBlocco} className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">🚫 Blocca Periodo</button>
             </div>
           </div>
         </div>
