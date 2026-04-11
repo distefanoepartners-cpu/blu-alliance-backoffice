@@ -617,7 +617,7 @@ useEffect(() => {
 
           {/* ── SEZIONE NS3000 ── */}
           {!isOperatore && showNs3000 && ns3000Boats.length > 0 && (
-            <table className="border-collapse mt-0" style={{ tableLayout: 'fixed', minWidth: `${colSizes.barca + monthDays.length * colSizes.giorno}px` }}>
+            <table className="border-collapse" style={{ tableLayout: 'fixed', width: '100%', minWidth: `${colSizes.barca + monthDays.length * colSizes.giorno}px` }}>
               <thead>
               <tr className="bg-indigo-600">
                 <th className="sticky left-0 z-20 bg-indigo-600 border border-indigo-500 px-2 py-1 text-left text-white text-xs font-bold"

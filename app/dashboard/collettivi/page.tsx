@@ -697,14 +697,14 @@ export default function TourCollettivi() {
           <table className="border-collapse" style={{ tableLayout: "fixed", minWidth: `${110 + monthDays.length * 36}px` }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-gray-50">
-                <th className="sticky left-0 z-20 bg-gray-100 border border-gray-200 px-2 py-2 text-left font-semibold text-gray-900 text-xs" style={{ width: '110px', minWidth: '110px' }}>Barca · Capienza</th>
+                <th className="sticky left-0 z-20 bg-gray-100 border border-gray-200 px-2 py-2 text-left font-semibold text-gray-900 text-xs" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>Barca · Capienza</th>
                 {renderDayHeaders('ba')}
               </tr>
             </thead>
             <tbody>
               {imbarcazioni.map((barca) => (
                 <tr key={barca.id} className="hover:bg-gray-50/50">
-                  <td className="sticky left-0 z-[5] bg-gray-50 border border-gray-200 px-2 py-1" style={{ width: '110px', minWidth: '110px' }}>
+                  <td className="sticky left-0 z-[5] bg-gray-50 border border-gray-200 px-1 py-1" style={{ width: '110px', minWidth: '110px', maxWidth: '110px', overflow: 'hidden' }}>
                     <div className="flex items-center justify-between gap-1">
                       <div className="min-w-0">
                         <div className="text-xs font-semibold text-gray-900 truncate" title={barca.nome}>{barca.nome}</div>
