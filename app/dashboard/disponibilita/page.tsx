@@ -624,9 +624,20 @@ useEffect(() => {
                   style={{ width: `${colSizes.barca}px`, minWidth: `${colSizes.barca}px` }}>
                   ⛵ NS3000 — {ns3000Boats.length} barche
                 </th>
-                <th colSpan={monthDays.length} className="border border-indigo-500 bg-indigo-600 py-1 text-indigo-200 text-xs text-left px-2">
-                  Tour privati e noleggi · stesso calendario BA
-                </th>
+                {monthDays.map((day) => {
+                  const isToday = isSameDay(day, new Date())
+                  const isWeekend = [0, 6].includes(day.getDay())
+                  return (
+                    <th key={day.toISOString()}
+                      className={`border border-indigo-500 py-1 text-center font-semibold ${isToday ? 'bg-indigo-400 text-white' : isWeekend ? 'bg-indigo-700 text-indigo-200' : 'bg-indigo-600 text-indigo-200'}`}
+                      style={{ width: `${colSizes.giorno}px`, minWidth: `${colSizes.giorno}px` }}>
+                      <div className="flex flex-col leading-tight">
+                        <span className="text-[9px] font-normal opacity-70 uppercase">{format(day, 'EEEEE', { locale: it })}</span>
+                        <span className={`text-xs ${isToday ? 'font-bold' : ''}`}>{format(day, 'd')}</span>
+                      </div>
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
               <tbody>
