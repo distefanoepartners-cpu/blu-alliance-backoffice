@@ -1,14 +1,16 @@
-// Service Worker minimale - PWA installabile, ZERO interferenza
-self.addEventListener('install', function() {
+// SW v3 - Solo PWA installabilita, ZERO interferenza rete
+// NESSUN fetch listener = browser gestisce tutto normalmente
+
+self.addEventListener("install", function() {
   self.skipWaiting();
 });
 
-self.addEventListener('activate', function(event) {
+self.addEventListener("activate", function(event) {
   event.waitUntil(
     caches.keys().then(function(names) {
-      return Promise.all(names.map(function(name) { return caches.delete(name); }));
-    }).then(function() { return self.clients.claim(); })
+      return Promise.all(names.map(function(n) { return caches.delete(n); }));
+    }).then(function() {
+      return self.clients.claim();
+    })
   );
 });
-
-// NESSUN fetch listener - lascia passare tutto senza interferire

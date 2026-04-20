@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { LogOut, Menu, X, Ship, Anchor, Calendar, Users, Building2, BarChart3, UserCircle, Settings, ChevronDown, ChevronRight, MessageSquare, ShieldCheck, Users2 } from 'lucide-react'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
+import { usePageTracker } from '@/lib/useActivityTracker'
 
 function DashboardLayoutContent({
   children,
@@ -16,6 +17,7 @@ function DashboardLayoutContent({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [adminMenuOpen, setAdminMenuOpen] = useState(false)
   const { user, loading, isAdmin, logout } = useAuth()
+  usePageTracker()
 
   const handleLogout = async () => {
     await logout()
@@ -70,6 +72,7 @@ function DashboardLayoutContent({
     { href: '/dashboard/affiliati', label: 'Affiliati', icon: Users2 },
     { href: '/dashboard/chatbot-leads', label: 'Chatbot Leads', icon: MessageSquare },
     { href: '/dashboard/amministratori', label: 'Gestione Utenti', icon: ShieldCheck },
+    { href: '/dashboard/monitoraggio', label: 'Monitoraggio', icon: BarChart3 },
   ]
 
   function isActive(href: string) {

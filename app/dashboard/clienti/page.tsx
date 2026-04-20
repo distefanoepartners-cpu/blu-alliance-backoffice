@@ -18,7 +18,12 @@ export default function ClientiPage() {
     telefono: '',
     nazione: '',
     lingua_preferita: 'it',
-    note: ''
+    note: '',
+    tipo_documento: '',
+    numero_documento: '',
+    scadenza_documento: '',
+    patente_nautica: '',
+    scadenza_patente_nautica: ''
   })
 
   useEffect(() => {
@@ -48,6 +53,11 @@ export default function ClientiPage() {
     try {
       const dataToSave = {
         ...formData,
+        scadenza_documento: formData.scadenza_documento || null,
+        scadenza_patente_nautica: formData.scadenza_patente_nautica || null,
+        tipo_documento: formData.tipo_documento || null,
+        numero_documento: formData.numero_documento || null,
+        patente_nautica: formData.patente_nautica || null,
         updated_at: new Date().toISOString()
       }
 
@@ -106,9 +116,14 @@ export default function ClientiPage() {
       telefono: cliente.telefono || '',
       nazione: cliente.nazione || '',
       lingua_preferita: cliente.lingua_preferita || 'it',
-      note: cliente.note || ''
+      note: cliente.note || '',
+      tipo_documento: cliente.tipo_documento || '',
+      numero_documento: cliente.numero_documento || '',
+      scadenza_documento: cliente.scadenza_documento || '',
+      patente_nautica: cliente.patente_nautica || '',
+      scadenza_patente_nautica: cliente.scadenza_patente_nautica || ''
     })
-    setShowModal(true)
+   setShowModal(true)
   }
 
   function resetForm() {
@@ -119,7 +134,12 @@ export default function ClientiPage() {
       telefono: '',
       nazione: '',
       lingua_preferita: 'it',
-      note: ''
+      note: '',
+      tipo_documento: '',
+      numero_documento: '',
+      scadenza_documento: '',
+      patente_nautica: '',
+      scadenza_patente_nautica: ''
     })
     setEditingId(null)
     setShowModal(false)
@@ -184,6 +204,9 @@ export default function ClientiPage() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Lingua
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Documenti
+                </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Azioni
                 </th>
@@ -192,7 +215,7 @@ export default function ClientiPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {clientiFiltrati.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                     {searchTerm ? 'Nessun cliente trovato' : 'Nessun cliente registrato'}
                   </td>
                 </tr>
@@ -229,6 +252,15 @@ export default function ClientiPage() {
                       <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800 uppercase">
                         {cliente.lingua_preferita || 'IT'}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-600">
+                      {cliente.tipo_documento && (
+                        <div>{cliente.tipo_documento === 'carta_identita' ? '🪪 CI' : '📘 Pass'}: {cliente.numero_documento || '-'}</div>
+                      )}
+                      {cliente.patente_nautica && (
+                        <div>⚓ {cliente.patente_nautica}</div>
+                      )}
+                      {!cliente.tipo_documento && !cliente.patente_nautica && '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
@@ -339,7 +371,44 @@ export default function ClientiPage() {
                   <option value="es">Español</option>
                 </select>
               </div>
-
+<hr className="my-4" />
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">📄 Documenti</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Tipo Documento</label>
+                  <select value={formData.tipo_documento} onChange={(e) => setFormData({ ...formData, tipo_documento: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">Nessuno</option>
+                    <option value="carta_identita">Carta d'Identità</option>
+                    <option value="passaporto">Passaporto</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Numero Documento</label>
+                  <input type="text" value={formData.numero_documento} onChange={(e) => setFormData({ ...formData, numero_documento: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Es: CA12345AA" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 mt-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Scadenza Documento</label>
+                  <input type="date" value={formData.scadenza_documento} onChange={(e) => setFormData({ ...formData, scadenza_documento: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                </div>
+                <div></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 mt-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Patente Nautica</label>
+                  <input type="text" value={formData.patente_nautica} onChange={(e) => setFormData({ ...formData, patente_nautica: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Numero patente" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Scadenza Patente</label>
+                  <input type="date" value={formData.scadenza_patente_nautica} onChange={(e) => setFormData({ ...formData, scadenza_patente_nautica: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                </div>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Note</label>
                 <textarea

@@ -1,0 +1,235 @@
+'use client'
+
+import { createContext, useContext, useEffect, useState, useMemo, useCallback, useRef, ReactNode } from 'react'
+import { supabase } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
+
+interface AuthUser {
+  id: string
+  email: string
+  full_name?: string
+  role: 'admin' | 'operatore' | 'staff' | 'partner'
+  fornitore_id?: string | null
+}
+
+interface AuthContextType {
+  user: AuthUser | null
+  loading: boolean
+  isAdmin: boolean
+  isOperatore: boolean
+  fornitoreId: string | null
+  logout: () => Promise<void>
+}
+
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  loading: true,
+  isAdmin: false,
+  isOperatore: false,
+  fornitoreId: null,
+  logout: async () => {},
+})
+
+// ═══════════════════════════════════════════════════════════
+// CACHE A LIVELLO DI MODULO — sopravvive ai remount React
+// ═══════════════════════════════════════════════════════════
+let _cachedUser: AuthUser | null = null
+let _authInitialized = false
+let _authInitPromise: Promise<void> | null = null
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(_cachedUser)
+  const [loading, setLoading] = useState(!_authInitialized)
+  const router = useRouter()
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+
+    // Già inizializzato → sincronizza e basta
+    if (_authInitialized) {
+      if (user !== _cachedUser) setUser(_cachedUser)
+      if (loading) setLoading(false)
+      return
+    }
+
+    // Init già in corso da altro mount → aspetta
+    if (_authInitPromise) {
+      _authInitPromise.then(() => {
+        if (!mountedRef.current) return
+        setUser(_cachedUser)
+        setLoading(false)
+      })
+      return
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // PRIMA INIZIALIZZAZIONE
+    // ═══════════════════════════════════════════════════════════
+    _authInitPromise = initAuth()
+
+    async function initAuth() {
+      let getSessionDone = false
+      
+      // Timeout: se getSession non risponde in 8s → sessione corrotta
+      const timeoutId = setTimeout(() => {
+        if (!getSessionDone) {
+          console.warn('[Auth] getSession timeout 8s — sessione corrotta, pulisco')
+          // ⭐ UNICO punto dove puliamo localStorage
+          try {
+            Object.keys(localStorage).forEach(key => {
+              if (key.startsWith('sb-') || key.includes('supabase')) {
+                localStorage.removeItem(key)
+              }
+            })
+          } catch (e) { /* ignore */ }
+          _authInitialized = true
+          _authInitPromise = null
+          if (mountedRef.current) setLoading(false)
+        }
+      }, 8000)
+
+      try {
+        console.log('[Auth] Init: getSession...')
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        // ⭐ Cancella timeout SUBITO — getSession ha risposto
+        getSessionDone = true
+        clearTimeout(timeoutId)
+
+        if (session?.user) {
+          console.log('[Auth] Session trovata, carico utente...')
+          const authUser = await loadUserData(session.user)
+          _cachedUser = authUser
+          if (mountedRef.current) setUser(authUser)
+          console.log('[Auth] Utente caricato:', authUser.role, authUser.email)
+        } else {
+          console.log('[Auth] Nessuna sessione attiva')
+        }
+      } catch (e) {
+        getSessionDone = true
+        clearTimeout(timeoutId)
+        console.error('[Auth] Init error:', e)
+      } finally {
+        _authInitialized = true
+        _authInitPromise = null
+        if (mountedRef.current) setLoading(false)
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // LISTENER AUTH — gestisce login/logout/refresh
+    // ⭐ NON pulisce MAI localStorage — evita il loop
+    // ═══════════════════════════════════════════════════════════
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mountedRef.current) return
+      
+      console.log('[Auth] onAuthStateChange:', event)
+
+      if (event === 'SIGNED_OUT') {
+        _cachedUser = null
+        setUser(null)
+        return
+      }
+
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        if (session?.user) {
+          const authUser = await loadUserData(session.user)
+          _cachedUser = authUser
+          if (mountedRef.current) setUser(authUser)
+        }
+      }
+      
+      // ⭐ TOKEN_REFRESH_FAILED: non fare nulla di aggressivo
+      // L'utente vedrà la pagina di login al prossimo caricamento
+    })
+
+    return () => {
+      mountedRef.current = false
+      subscription.unsubscribe()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ═══════════════════════════════════════════════════════════
+  // LOGOUT — pulisce tutto in modo controllato
+  // ═══════════════════════════════════════════════════════════
+  const logout = useCallback(async () => {
+    console.log('[Auth] Logout...')
+    _cachedUser = null
+    // NON resettare _authInitialized — causa loop di re-init
+    
+    try {
+      await supabase.auth.signOut()
+    } catch (e) {
+      console.error('[Auth] signOut error:', e)
+      // Fallback: pulisci manualmente
+      try {
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') || key.includes('supabase')) {
+            localStorage.removeItem(key)
+          }
+        })
+      } catch (e2) { /* ignore */ }
+    }
+    
+    setUser(null)
+    router.push('/')
+  }, [router])
+
+  // ═══════════════════════════════════════════════════════════
+  // CONTEXT VALUE — useMemo previene re-render infiniti
+  // ═══════════════════════════════════════════════════════════
+  const value = useMemo(() => ({
+    user,
+    loading,
+    isAdmin: user?.role === 'admin' || false,
+    isOperatore: user?.role === 'operatore' || false,
+    fornitoreId: user?.fornitore_id || null,
+    logout,
+  }), [user, loading, logout])
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// Carica dati utente da tabella amministratori
+// ═══════════════════════════════════════════════════════════
+async function loadUserData(authUser: any): Promise<AuthUser> {
+  try {
+    const { data, error } = await supabase
+      .from('amministratori')
+      .select('id, email, nome, cognome, ruolo, fornitore_id, attivo')
+      .eq('user_id', authUser.id)
+      .maybeSingle()
+
+    if (error) console.error('[Auth] Errore lettura amministratori:', error)
+
+    if (data && data.attivo !== false) {
+      return {
+        id: authUser.id,
+        email: data.email || authUser.email || '',
+        full_name: `${data.nome || ''} ${data.cognome || ''}`.trim() || authUser.email,
+        role: data.ruolo || 'operatore',
+        fornitore_id: data.fornitore_id || null,
+      }
+    }
+  } catch (e) {
+    console.error('[Auth] loadUser error:', e)
+  }
+
+  return {
+    id: authUser.id,
+    email: authUser.email || '',
+    full_name: authUser.email,
+    role: 'operatore',
+    fornitore_id: null,
+  }
+}
+
+export function useAuth() {
+  return useContext(AuthContext)
+}

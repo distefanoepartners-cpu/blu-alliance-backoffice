@@ -7,243 +7,161 @@ import { it } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import BookingModal from '@/components/BookingModal'
 import { useAuth } from '@/contexts/AuthContext'
+import { trackAction } from '@/lib/useActivityTracker'
+
+const NS3000_FORNITORE_ID = '2d78fca2-f474-4c44-8443-44c75924d5c3'
+
+const ns3000ToBaMap: Record<string, string> = {
+  '4a222a73-304b-4945-813b-9548ba201675': 'b743d220-6200-49de-9324-68297e4eee75', // 01 - Salpa Soleil 20
+  'd03cfe13-bcb6-4f98-bda4-a18b8bf7957d': '64e06e82-ed6e-4f23-b06e-14533a0187c6', // 02 - Salpa Soleil 20
+  '00ce8828-ebf9-4aad-8ad8-8f6b4e90a1e3': '7e854592-bb5d-4971-98aa-ae66c2fa66ba', // 03 - Salpa Soleil 20
+  '2edce19e-3687-42b9-bb87-57e2aabfccd2': 'b2a20895-eeab-493d-a2fb-53ef5ba1d220', // 04 - Salpa Soleil 20
+  '937298ab-2a15-4ace-adb2-b63dd1b865b1': '4c4f4b54-4ee6-481f-94f9-a142b5d651b0', // 05 - Cayman 585
+  '6800721d-a8e9-4217-b7a2-8548359c6cfc': '9a6cc58f-bb70-440e-92a1-d2e2c2712e5b', // 06 - Cayman 585
+  '52a7e9d0-444e-4801-a095-afcbba7ceed5': 'b2c15f7e-ffb2-4afa-bf19-d53f8d26902b', // 07 - Predator 599
+  '180dd752-b2b4-4318-beed-8bc15b3877c2': '557ecf08-2e88-4914-a1d9-da5ec5bf5845', // 08 - Predator 599
+  '8c1b5b3d-d4a2-441c-8f8e-71b88ff6c966': '07673392-e08c-4d53-a128-e9d6c405917d', // 09 - Predator 599
+  '42d4c904-f2e1-4436-931b-3e7b651bd7a6': '2f4f1a71-5037-4fb0-bbd1-ef6c6acf8dc5', // 10 - Cayman 585
+  'c35aefd0-6721-4f01-aeec-2d47bdf9f24f': '2d4995ec-35b3-4358-ace1-54621a9528ed', // 11 - Cab Dorado 10
+  'fe759df8-5d8e-401f-8fb2-dfaa3642c33c': '51231c4f-b929-466c-aed3-9440639e0bd7', // 12 - Manò 24 Sport
+  'd5bff230-0e6a-4211-b0ce-342e8fbace51': '8d4d1bd6-142f-4d0f-8854-333742eeeba3', // 13 - Clubman 26
+  '636cb5d4-1316-4382-90db-fa6c16deb1f4': '31d0ac07-57a9-472d-b07a-f9a26b2ba89e', // 14 - Yamaha 1800
+  '1365d4d3-0ffb-48a8-a8a6-d3c49dd22145': 'a079598f-b25d-49d6-90ce-b25146687a31', // 15 - Manò 25 Sport
+  '7b039929-1af2-46ab-9a91-f051497161e7': 'c8638c23-cd35-4c11-8333-4316f1ca4726', // 16 - All Rib 630
+  '02ffd51e-da3f-45fa-b2a5-92acc254e2a6': 'd8262b01-07d0-4795-ba31-e64c6eaf6f0f', // 18 - Italyure 37 Salerno
+  '3b967967-d7de-48bb-9f03-5e779aa15a27': '43d0b751-da8d-4181-aabc-ba3b217142bc', // 19 - Italyure 37 Masuccio
+}
+const baToNs3000Map: Record<string, string> = Object.fromEntries(
+  Object.entries(ns3000ToBaMap).map(([k, v]) => [v, k])
+)
+
+const TIPO_LABELS: Record<string, string> = {
+  'yacht': '🛥️ Yacht',
+  'gozzo': '⛵ Gozzi',
+  'gommone': '🚤 Gommoni',
+  'barca': '🚢 Barche',
+  'barca_vela': '⛵ Barche a Vela',
+}
+const TIPO_ORDER = ['yacht', 'gozzo', 'gommone', 'barca', 'barca_vela']
 
 export default function PlanningMensile() {
   const { isOperatore, fornitoreId, loading: authLoading } = useAuth()
 
- const [colSizes, setColSizes] = useState({ barca: 100, giorno: 34, altezza: 40 })
-
-useEffect(() => {
-  function updateSizes() {
-    const w = window.innerWidth
-    if (w < 640) setColSizes({ barca: 70, giorno: 22, altezza: 30 })
-    else if (w < 1024) setColSizes({ barca: 80, giorno: 26, altezza: 34 })
-    else if (w < 1440) setColSizes({ barca: 90, giorno: 30, altezza: 38 })
-    else setColSizes({ barca: 100, giorno: 34, altezza: 40 })
-  }
+  const [colSizes, setColSizes] = useState({ barca: 140, giorno: 38, altezza: 42 })
+  useEffect(() => {
+    function updateSizes() {
+      const w = window.innerWidth
+      if (w < 640) setColSizes({ barca: 80, giorno: 26, altezza: 34 })
+      else if (w < 1024) setColSizes({ barca: 100, giorno: 32, altezza: 38 })
+      else setColSizes({ barca: 140, giorno: 38, altezza: 42 })
+    }
     updateSizes()
     window.addEventListener('resize', updateSizes)
     return () => window.removeEventListener('resize', updateSizes)
   }, [])
 
   const [imbarcazioni, setImbarcazioni] = useState<any[]>([])
-  const [imbarcazioniFiltrate, setImbarcazioniFiltrate] = useState<any[]>([])
-  const [fornitori, setFornitori] = useState<any[]>([])
+  const [servizi, setServizi] = useState<any[]>([])
+  const [prezziMap, setPrezziMap] = useState<Record<string, number>>({})
   const [prenotazioni, setPrenotazioni] = useState<any[]>([])
   const [blocchi, setBlocchi] = useState<any[]>([])
   const [currentMonthStart, setCurrentMonthStart] = useState(startOfMonth(new Date()))
   const [loading, setLoading] = useState(true)
-  const [filtroFornitore, setFiltroFornitore] = useState<string>('tutti')
-  const [filtroCategoria, setFiltroCategoria] = useState<string>('tutti')
-  const [showFiltri, setShowFiltri] = useState(false)
-  const blocchiFiltrati = isOperatore && fornitoreId
-  ? blocchi.filter(b => imbarcazioniFiltrate.some(i => i.id === b.imbarcazione_id))
-  : blocchi
+  const [filtroTour, setFiltroTour] = useState<string>('tutti')
+  const [filtroTipo, setFiltroTipo] = useState<string>('tutti')
+  const [filtroPax, setFiltroPax] = useState<number>(0)
+  // NS3000
+  const [ns3000Availability, setNs3000Availability] = useState<Record<string, any>>({})
+  const [ns3000Bookings, setNs3000Bookings] = useState<any[]>([])
+
+  // Modals
   const [showBloccoModal, setShowBloccoModal] = useState(false)
-  const [selectedCell, setSelectedCell] = useState<{ imbarcazioneId: string; date: Date; imbarcazioneNome: string } | null>(null)
+  const [selectedCell, setSelectedCell] = useState<any>(null)
   const [motivoBlocco, setMotivoBlocco] = useState('')
   const [tipoBlocco, setTipoBlocco] = useState<'manutenzione' | 'prenotazione_esterna' | 'altro'>('altro')
-  const [dataFineBlocco, setDataFineBlocco] = useState('')
-
-  const [contextMenu, setContextMenu] = useState<{
-    x: number; y: number
-    imbarcazioneId: string; imbarcazioneNome: string; date: Date
-  } | null>(null)
+  const [contextMenu, setContextMenu] = useState<any>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
-
   const [showNewBookingModal, setShowNewBookingModal] = useState(false)
   const [newBookingInitialDate, setNewBookingInitialDate] = useState('')
   const [newBookingInitialImbarcazione, setNewBookingInitialImbarcazione] = useState('')
   const [newBookingInitialNs3000BoatId, setNewBookingInitialNs3000BoatId] = useState('')
   const [newBookingInitialNs3000BoatName, setNewBookingInitialNs3000BoatName] = useState('')
-
   const [showDettagliModal, setShowDettagliModal] = useState(false)
   const [prenotazioneSelezionata, setPrenotazioneSelezionata] = useState<any>(null)
   const [loadingDettagli, setLoadingDettagli] = useState(false)
-
-  // NS3000
-  const [ns3000Boats, setNs3000Boats] = useState<any[]>([])
-  const [ns3000Loading, setNs3000Loading] = useState(false)
-  const [showNs3000, setShowNs3000] = useState(true)
-  const [ns3000Bookings, setNs3000Bookings] = useState<any[]>([])
   const [showNs3000Dettagli, setShowNs3000Dettagli] = useState(false)
   const [ns3000BookingDetail, setNs3000BookingDetail] = useState<any>(null)
-
-  // ⭐ Mappa pax collettivi NS3000 sulle celle BA
-  const [ns3000CollectivePaxMap, setNs3000CollectivePaxMap] = useState<Record<string, number>>({})
-
-  // Mapping NS3000 → BA
-  const ns3000ToBaMap: Record<string, string> = {
-    '4a222a73-304b-4945-813b-9548ba201675': 'b743d220-6200-49de-9324-68297e4eee75',
-    'd03cfe13-bcb6-4f98-bda4-a18b8bf7957d': '64e06e82-ed6e-4f23-b06e-14533a0187c6',
-    '00ce8828-ebf9-4aad-8ad8-8f6b4e90a1e3': '7e854592-bb5d-4971-98aa-ae66c2fa66ba',
-    '2edce19e-3687-42b9-bb87-57e2aabfccd2': 'b2a20895-eeab-493d-a2fb-53ef5ba1d220',
-    '937298ab-2a15-4ace-adb2-b63dd1b865b1': '4c4f4b54-4ee6-481f-94f9-a142b5d651b0',
-    '6800721d-a8e9-4217-b7a2-8548359c6cfc': '9a6cc58f-bb70-440e-92a1-d2e2c2712e5b',
-    'c35aefd0-6721-4f01-aeec-2d47bdf9f24f': '2d4995ec-35b3-4358-ace1-54621a9528ed',
-    'fe759df8-5d8e-401f-8fb2-dfaa3642c33c': '51231c4f-b929-466c-aed3-9440639e0bd7',
-    'd5bff230-0e6a-4211-b0ce-342e8fbace51': '8d4d1bd6-142f-4d0f-8854-333742eeeba3',
-    '1365d4d3-0ffb-48a8-a8a6-d3c49dd22145': 'a079598f-b25d-49d6-90ce-b25146687a31',
-  }
-
-  // ID fornitore NS3000 — barche di questo fornitore vanno SOLO nella sezione NS3000
-  const NS3000_FORNITORE_ID = '2d78fca2-f474-4c44-8443-44c75924d5c3'
+  const [syncing, setSyncing] = useState(false)
 
   const currentMonthEnd = endOfMonth(currentMonthStart)
   const monthDays = eachDayOfInterval({ start: currentMonthStart, end: currentMonthEnd })
-  const monthNames = ['GENNAIO','FEBBRAIO','MARZO','APRILE','MAGGIO','GIUGNO','LUGLIO','AGOSTO','SETTEMBRE','OTTOBRE','NOVEMBRE','DICEMBRE']
+  const monthNames = ['GENNAIO', 'FEBBRAIO', 'MARZO', 'APRILE', 'MAGGIO', 'GIUGNO', 'LUGLIO', 'AGOSTO', 'SETTEMBRE', 'OTTOBRE', 'NOVEMBRE', 'DICEMBRE']
   const currentMonth = currentMonthStart.getMonth()
   const currentYear = currentMonthStart.getFullYear()
 
+  // ═══ LOAD ═══
   useEffect(() => {
     if (authLoading) return
     loadData()
-    loadNs3000Data()
   }, [currentMonthStart, authLoading, isOperatore, fornitoreId])
 
   useEffect(() => {
-    applicaFiltri()
-  }, [imbarcazioni, filtroFornitore, filtroCategoria, showNs3000, ns3000Boats, isOperatore, fornitoreId])
+    if (filtroTour !== 'tutti') loadPrezziPerTour(filtroTour)
+    else setPrezziMap({})
+  }, [filtroTour, imbarcazioni])
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
-        setContextMenu(null)
-      }
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) setContextMenu(null)
     }
     if (contextMenu) document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [contextMenu])
 
-  async function loadNs3000Data() {
-    try {
-      setNs3000Loading(true)
-      const dateFrom = format(currentMonthStart, 'yyyy-MM-dd')
-      const dateTo = format(currentMonthEnd, 'yyyy-MM-dd')
-
-      // Availability e bookings per la sezione NS3000 separata
-      const availRes = await fetch(`/api/ns3000/availability?date_from=${dateFrom}&date_to=${dateTo}`)
-      if (availRes.ok) {
-        const availData = await availRes.json()
-        setNs3000Boats(availData.boats || [])
-      }
-
-      const bookRes = await fetch(`/api/ns3000/bookings?date_from=${dateFrom}&date_to=${dateTo}`)
-      if (bookRes.ok) {
-        const bookData = await bookRes.json()
-        setNs3000Bookings(bookData.bookings || [])
-      }
-
-      // ⭐ Collettivi NS3000 → badge nelle celle BA
-      try {
-        const collRes = await fetch(`/api/ns3000/collective-tours?start=${dateFrom}&end=${dateTo}`)
-        if (collRes.ok) {
-          const collData: any[] = await collRes.json()
-          const paxMap: Record<string, number> = {}
-          for (const tourDay of collData) {
-            for (const boat of tourDay.boats || []) {
-              const baId = ns3000ToBaMap[boat.boat_id]
-              if (!baId || !boat.passengers_booked) continue
-              const key = `${baId}|${tourDay.date}`
-              paxMap[key] = (paxMap[key] || 0) + (boat.passengers_booked || 0)
-            }
-          }
-          setNs3000CollectivePaxMap(paxMap)
-        }
-      } catch (e) {
-        console.warn('NS3000 collective-tours non disponibile:', e)
-      }
-    } catch (error) {
-      console.error('Errore caricamento NS3000:', error)
-    } finally {
-      setNs3000Loading(false)
-    }
-  }
-
-  function getNs3000CellStatus(boatId: string, date: Date) {
-    const dateStr = format(date, 'yyyy-MM-dd')
-    const booking = ns3000Bookings.find(b => {
-      if (b.boat_id !== boatId) return false
-      const startDate = b.booking_date
-      const endDate = b.booking_end_date || b.booking_date
-      return dateStr >= startDate && dateStr <= endDate
-    })
-    if (booking) return { type: 'occupato', reason: 'Prenotata', booking }
-
-    const boat = ns3000Boats.find(b => b.boat_id === boatId)
-    if (!boat) return { type: 'unknown' }
-    const dayAvail = boat.availability?.[dateStr]
-    if (!dayAvail) return { type: 'unknown' }
-    if (!dayAvail.available && !dayAvail.slots?.morning && !dayAvail.slots?.afternoon) {
-      return { type: 'occupato', reason: dayAvail.reason || 'Prenotata' }
-    }
-    if (dayAvail.available && (!dayAvail.slots?.morning || !dayAvail.slots?.afternoon)) {
-      return { type: 'parziale', slots: dayAvail.slots }
-    }
-    return { type: 'disponibile' }
-  }
-
-  function handleNs3000CellClick(boatId: string, boatName: string, date: Date) {
-    const status = getNs3000CellStatus(boatId, date)
-    if (status.booking) {
-      setNs3000BookingDetail(status.booking)
-      setShowNs3000Dettagli(true)
-    } else {
-      setNewBookingInitialDate(format(date, 'yyyy-MM-dd'))
-      setNewBookingInitialNs3000BoatId(String(boatId))
-      setNewBookingInitialNs3000BoatName(boatName)
-      setNewBookingInitialImbarcazione('')
-      setShowNewBookingModal(true)
-    }
-  }
-
   async function loadData() {
     try {
       setLoading(true)
-      console.log('[Planning] loadData → isOperatore:', isOperatore, 'fornitoreId:', fornitoreId)
       const dateFrom = format(currentMonthStart, 'yyyy-MM-dd')
       const dateTo = format(currentMonthEnd, 'yyyy-MM-dd')
 
-      const { data: fornitoriData } = await supabase
-        .from('fornitori').select('id, ragione_sociale').eq('attivo', true).order('ragione_sociale')
+      const { data: serviziData } = await supabase.from('servizi').select('id, nome, tipo, prezzo_base, prezzo_per_persona').eq('attivo', true).order('nome')
+      setServizi(serviziData || [])
 
-      const barcheQuery = supabase
-        .from('imbarcazioni')
-        .select('id, nome, tipo, categoria, fornitore_id')
-        .eq('attiva', true)
-        .order('ordine').order('nome')
-
-      if (isOperatore) {
-        if (fornitoreId) {
-          barcheQuery.eq('fornitore_id', fornitoreId)
-        } else {
-          setImbarcazioni([])
-          setPrenotazioni([])
-          setBlocchi([])
-          setLoading(false)
-          return
-        }
-      }
-
+      const barcheQuery = supabase.from('imbarcazioni').select('id, nome, tipo, categoria, fornitore_id, capacita_massima').eq('attiva', true).order('ordine').order('nome')
+      if (isOperatore && fornitoreId) barcheQuery.eq('fornitore_id', fornitoreId)
+      else if (isOperatore) { setImbarcazioni([]); setLoading(false); return }
       const { data: barcheData } = await barcheQuery
-
-      const { data: prenotazioniData } = await supabase
-        .from('prenotazioni')
-        .select('id, imbarcazione_id, data_servizio, stato, numero_persone, codice_prenotazione, tipo_tour')
-        .gte('data_servizio', dateFrom)
-        .lte('data_servizio', dateTo)
-        .in('stato', ['confermata', 'in_attesa', 'completata'])
-
-      const { data: blocchiData } = await supabase
-        .from('blocchi_imbarcazioni')
-        .select('id, imbarcazione_id, data_inizio, data_fine, motivo, note')
-        .lte('data_inizio', dateTo)
-        .gte('data_fine', dateFrom)
-
-      setFornitori(fornitoriData || [])
       setImbarcazioni(barcheData || [])
+
+      const { data: prenotazioniData } = await supabase.from('prenotazioni')
+        .select('id, imbarcazione_id, data_servizio, stato, numero_persone, codice_prenotazione')
+        .gte('data_servizio', dateFrom).lte('data_servizio', dateTo)
+        .in('stato', ['confermata', 'in_attesa', 'completata'])
       setPrenotazioni(prenotazioniData || [])
+
+      const { data: blocchiData } = await supabase.from('blocchi_imbarcazioni')
+        .select('id, imbarcazione_id, data_inizio, data_fine, motivo, note')
+        .lte('data_inizio', dateTo).gte('data_fine', dateFrom)
       setBlocchi(blocchiData || [])
+
+      // NS3000
+      try {
+        const availRes = await fetch(`/api/ns3000/availability?date_from=${dateFrom}&date_to=${dateTo}`)
+        if (availRes.ok) {
+          const availData = await availRes.json()
+          const avMap: Record<string, any> = {}
+          ;(availData.boats || []).forEach((boat: any) => {
+            const baId = ns3000ToBaMap[boat.boat_id]
+            if (baId) avMap[baId] = boat.availability
+          })
+          setNs3000Availability(avMap)
+        }
+        const bookRes = await fetch(`/api/ns3000/bookings?date_from=${dateFrom}&date_to=${dateTo}`)
+        if (bookRes.ok) {
+          const bookData = await bookRes.json()
+          setNs3000Bookings(bookData.bookings || [])
+        }
+      } catch (e) { console.error('NS3000 error:', e) }
     } catch (error) {
       console.error('Errore:', error)
       toast.error('Errore nel caricamento')
@@ -252,63 +170,112 @@ useEffect(() => {
     }
   }
 
-  function applicaFiltri() {
-    let filtrate = [...imbarcazioni]
+  async function loadPrezziPerTour(servizioId: string) {
+    try {
+      const { data: relazioni } = await supabase.from('imbarcazioni_servizi')
+        .select('imbarcazione_id, prezzo_personalizzato').eq('servizio_id', servizioId)
+      const { data: prezziCat } = await supabase.from('servizi_prezzi_categoria')
+        .select('categoria, prezzo').eq('servizio_id', servizioId)
 
-    if (isOperatore) {
-      filtrate = fornitoreId ? filtrate.filter(b => b.fornitore_id === fornitoreId) : []
-    }
+      const catMap: Record<string, number> = {}
+      ;(prezziCat || []).forEach(pc => { catMap[pc.categoria] = pc.prezzo })
 
-    // ⭐ Escludi SEMPRE le barche NS3000 dalla griglia BA
-    // Hanno la loro sezione dedicata in fondo
-    filtrate = filtrate.filter(b => b.fornitore_id !== NS3000_FORNITORE_ID)
+      const servizio = servizi.find(s => s.id === servizioId)
+      const prezzoBase = servizio?.prezzo_base || 0
 
-    if (filtroFornitore !== 'tutti') filtrate = filtrate.filter(b => b.fornitore_id === filtroFornitore)
-    if (filtroCategoria !== 'tutti') filtrate = filtrate.filter(b => b.categoria === filtroCategoria)
-    setImbarcazioniFiltrate(filtrate)
+      const map: Record<string, number> = {}
+      ;(relazioni || []).forEach(rel => {
+        const barca = imbarcazioni.find(b => b.id === rel.imbarcazione_id)
+        if (rel.prezzo_personalizzato) map[rel.imbarcazione_id] = rel.prezzo_personalizzato
+        else if (barca && catMap[barca.categoria]) map[rel.imbarcazione_id] = catMap[barca.categoria]
+        else map[rel.imbarcazione_id] = prezzoBase
+      })
+      setPrezziMap(map)
+    } catch (e) { console.error('Errore prezzi:', e) }
   }
 
-  function goToPreviousMonth() { setCurrentMonthStart(subMonths(currentMonthStart, 1)) }
-  function goToNextMonth() { setCurrentMonthStart(addMonths(currentMonthStart, 1)) }
-  function goToToday() { setCurrentMonthStart(startOfMonth(new Date())) }
-  function handleMonthChange(m: number) { setCurrentMonthStart(startOfMonth(new Date(currentYear, m, 1))) }
-  function handleYearChange(y: number) { setCurrentMonthStart(startOfMonth(new Date(y, currentMonth, 1))) }
+  // ═══ FILTERED & GROUPED ═══
+  const filteredBoats = imbarcazioni.filter(b => {
+    if (isOperatore && fornitoreId && b.fornitore_id !== fornitoreId) return false
+    if (filtroTour !== 'tutti' && !prezziMap[b.id]) return false
+    if (filtroTipo !== 'tutti' && (b.tipo || '').toLowerCase() !== filtroTipo) return false
+    if (filtroPax > 0 && (b.capacita_massima || 0) < filtroPax) return false
+    return true
+  })
 
+  const groupedBoats: { tipo: string; label: string; boats: any[] }[] = TIPO_ORDER
+    .map(tipo => ({
+      tipo, label: TIPO_LABELS[tipo] || tipo,
+      boats: filteredBoats
+        .filter(b => (b.tipo || '').toLowerCase() === tipo)
+        .sort((a, b) => (prezziMap[a.id] || 0) - (prezziMap[b.id] || 0))
+    }))
+    .filter(g => g.boats.length > 0)
+
+  const mappedTipos = new Set(TIPO_ORDER)
+  const unmapped = filteredBoats.filter(b => !mappedTipos.has((b.tipo || '').toLowerCase()))
+  if (unmapped.length > 0) {
+    groupedBoats.push({ tipo: 'altro', label: '📋 Altro', boats: unmapped.sort((a, b) => (prezziMap[a.id] || 0) - (prezziMap[b.id] || 0)) })
+  }
+
+  const totalBoats = groupedBoats.reduce((s, g) => s + g.boats.length, 0)
+  const isCollettivo = servizi.find(s => s.id === filtroTour)?.prezzo_per_persona
+
+  // ═══ CELL STATUS ═══
   function getCellStatus(imbarcazioneId: string, date: Date) {
     const dateStr = format(date, 'yyyy-MM-dd')
-    const prenotazione = prenotazioni.find(
-      p => p.imbarcazione_id === imbarcazioneId && p.data_servizio === dateStr
-    )
+    const isNs3000 = imbarcazioni.find(b => b.id === imbarcazioneId)?.fornitore_id === NS3000_FORNITORE_ID
+
+    if (isNs3000) {
+      const ns3000BoatId = baToNs3000Map[imbarcazioneId]
+      if (ns3000BoatId) {
+        const booking = ns3000Bookings.find(b => {
+          if (b.boat_id !== ns3000BoatId) return false
+          const end = b.booking_end_date || b.booking_date
+          return dateStr >= b.booking_date && dateStr <= end
+        })
+        if (booking) return { type: 'ns3000_booking', data: booking }
+      }
+      const avail = ns3000Availability[imbarcazioneId]?.[dateStr]
+      if (avail && !avail.available) console.log('NS3000 cell:', imbarcazioneId, dateStr, avail)
+      if (avail && !avail.available && !avail.slots?.morning && !avail.slots?.afternoon)
+        return { type: 'ns3000_occupato', reason: avail.reason || 'Occupata' }
+      if (avail && avail.available && (!avail.slots?.morning || !avail.slots?.afternoon))
+        return { type: 'ns3000_parziale', slots: avail.slots }
+      return { type: 'disponibile' }
+    }
+
+    const pren = prenotazioni.find(p => p.imbarcazione_id === imbarcazioneId && p.data_servizio === dateStr)
+    if (pren) return { type: 'prenotazione', data: pren }
     const blocco = blocchi.find(b => {
       if (b.imbarcazione_id !== imbarcazioneId) return false
-      const dataInizio = parseISO(b.data_inizio)
-      const dataFine = parseISO(b.data_fine)
-      return date >= dataInizio && date <= dataFine
+      return date >= parseISO(b.data_inizio) && date <= parseISO(b.data_fine)
     })
-    if (prenotazione) return { type: 'prenotazione', data: prenotazione }
     if (blocco) return { type: 'blocco', data: blocco }
     return { type: 'disponibile' }
   }
 
-  function handleCellClick(imbarcazioneId: string, imbarcazioneNome: string, date: Date, e: React.MouseEvent) {
-    const cellStatus = getCellStatus(imbarcazioneId, date)
-    if (cellStatus.type === 'prenotazione') {
-      if (isOperatore) return
-      mostraDettagliPrenotazione(cellStatus.data.id)
-      return
-    }
-    if (cellStatus.type === 'blocco') {
-      if (confirm('Vuoi rimuovere questo blocco?')) rimuoviBlocco(cellStatus.data.id)
-      return
-    }
+  // ═══ HANDLERS ═══
+  function handleCellClick(barca: any, date: Date, e: React.MouseEvent) {
+    const cs = getCellStatus(barca.id, date)
+    const isNs = barca.fornitore_id === NS3000_FORNITORE_ID
+
+    if (cs.type === 'prenotazione') { if (!isOperatore) mostraDettagliPrenotazione(cs.data.id); return }
+    if (cs.type === 'ns3000_booking') { setNs3000BookingDetail(cs.data); setShowNs3000Dettagli(true); return }
+    if (cs.type === 'blocco') { if (confirm('Rimuovere il blocco?')) rimuoviBlocco(cs.data.id); return }
+    if (cs.type === 'ns3000_occupato') return
+
     if (isOperatore) {
-      setSelectedCell({ imbarcazioneId, date, imbarcazioneNome })
-      setMotivoBlocco('')
-      setTipoBlocco('altro')
-      setShowBloccoModal(true)
+      setSelectedCell({ imbarcazioneId: barca.id, date, imbarcazioneNome: barca.nome })
+      setMotivoBlocco(''); setTipoBlocco('altro'); setShowBloccoModal(true)
+    } else if (isNs) {
+      setNewBookingInitialDate(format(date, 'yyyy-MM-dd'))
+      setNewBookingInitialNs3000BoatId(baToNs3000Map[barca.id] || '')
+      setNewBookingInitialNs3000BoatName(barca.nome)
+      setNewBookingInitialImbarcazione(''); setShowNewBookingModal(true)
     } else {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-      setContextMenu({ x: rect.left + window.scrollX, y: rect.bottom + window.scrollY + 4, imbarcazioneId, imbarcazioneNome, date })
+      setContextMenu({ x: rect.left + window.scrollX, y: rect.bottom + window.scrollY + 4, imbarcazioneId: barca.id, imbarcazioneNome: barca.nome, date })
     }
   }
 
@@ -316,224 +283,231 @@ useEffect(() => {
     if (!contextMenu) return
     setNewBookingInitialDate(format(contextMenu.date, 'yyyy-MM-dd'))
     setNewBookingInitialImbarcazione(contextMenu.imbarcazioneId)
-    setNewBookingInitialNs3000BoatId('')
-    setNewBookingInitialNs3000BoatName('')
-    setContextMenu(null)
-    setShowNewBookingModal(true)
+    setNewBookingInitialNs3000BoatId(''); setNewBookingInitialNs3000BoatName('')
+    setContextMenu(null); setShowNewBookingModal(true)
   }
-
   function openBloccoFromMenu() {
     if (!contextMenu) return
     setSelectedCell({ imbarcazioneId: contextMenu.imbarcazioneId, date: contextMenu.date, imbarcazioneNome: contextMenu.imbarcazioneNome })
-    setMotivoBlocco('')
-    setTipoBlocco('altro')
-    setContextMenu(null)
-    setShowBloccoModal(true)
+    setMotivoBlocco(''); setTipoBlocco('altro'); setContextMenu(null); setShowBloccoModal(true)
   }
 
-  async function mostraDettagliPrenotazione(prenotazioneId: string) {
+  async function mostraDettagliPrenotazione(id: string) {
     try {
       setLoadingDettagli(true)
-      const { data, error } = await supabase
-        .from('prenotazioni')
-        .select(`*, servizi (id, nome, tipo, prezzo_base), imbarcazioni (id, nome, tipo, categoria), clienti (id, nome, cognome, email, telefono, nazione)`)
-        .eq('id', prenotazioneId).single()
+      const { data, error } = await supabase.from('prenotazioni')
+        .select('*, servizi(id,nome,tipo,prezzo_base), imbarcazioni(id,nome,tipo,categoria), clienti(id,nome,cognome,email,telefono,nazione)')
+        .eq('id', id).single()
       if (error) throw error
-      setPrenotazioneSelezionata(data)
-      setShowDettagliModal(true)
-    } catch {
-      toast.error('Errore nel caricamento dei dettagli')
-    } finally {
-      setLoadingDettagli(false)
-    }
+      setPrenotazioneSelezionata(data); setShowDettagliModal(true)
+    } catch (e) { toast.error('Errore caricamento dettagli') }
+    finally { setLoadingDettagli(false) }
   }
 
   async function creaBlocco() {
     if (!selectedCell) return
-    const dataInizioStr = format(selectedCell.date, 'yyyy-MM-dd')
-    const dataFineStr = dataFineBlocco || dataInizioStr
-    if (dataFineStr < dataInizioStr) {
-      toast.error('La data fine deve essere uguale o successiva alla data inizio')
-      return
-    }
     try {
       const { error } = await supabase.from('blocchi_imbarcazioni').insert([{
         imbarcazione_id: selectedCell.imbarcazioneId,
-        data_inizio: dataInizioStr,
-        data_fine: dataFineStr,
-        motivo: motivoBlocco || 'Indisponibilità',
-        note: tipoBlocco
+        data_inizio: format(selectedCell.date, 'yyyy-MM-dd'),
+        data_fine: format(selectedCell.date, 'yyyy-MM-dd'),
+        motivo: motivoBlocco || 'Indisponibilità', note: tipoBlocco
       }])
       if (error) throw error
-      const giorni = Math.round((new Date(dataFineStr).getTime() - new Date(dataInizioStr).getTime()) / 86400000) + 1
-      toast.success(`Blocco creato! ${giorni > 1 ? `${giorni} giorni bloccati.` : ''}`)
-      setShowBloccoModal(false)
-      setDataFineBlocco('')
-      setMotivoBlocco('')
-      loadData()
-    } catch {
-      toast.error('Errore nella creazione del blocco')
-    }
+      toast.success('Blocco creato!'); setShowBloccoModal(false); loadData()
+      trackAction('disponibilita', 'blocco', { barca: selectedCell.imbarcazioneNome, data: format(selectedCell.date, 'yyyy-MM-dd'), motivo: motivoBlocco || tipoBlocco })
+    } catch (e) { toast.error('Errore creazione blocco') }
   }
-
-  async function rimuoviBlocco(bloccoId: string) {
+async function syncNs3000() {
     try {
-      const { error } = await supabase.from('blocchi_imbarcazioni').delete().eq('id', bloccoId)
-      if (error) throw error
-      toast.success('Blocco rimosso!')
-      loadData()
-    } catch {
-      toast.error('Errore nella rimozione del blocco')
+      setSyncing(true)
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/ns3000/sync', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`
+        },
+        body: JSON.stringify({
+          date_from: format(currentMonthStart, 'yyyy-MM-dd'),
+          date_to: format(currentMonthEnd, 'yyyy-MM-dd')
+        })
+      })
+      const result = await res.json()
+      if (result.success) {
+        toast.success(`Sync completata: ${result.summary.created} nuove, ${result.summary.updated} aggiornate`)
+        loadData()
+        trackAction('disponibilita', 'sync_ns3000', { created: result.summary.created, updated: result.summary.updated })
+      } else {
+        toast.error('Errore sync: ' + (result.error || result.message || 'Sconosciuto'))
+      }
+    } catch (error) {
+      toast.error('Errore connessione sync NS3000')
+    } finally {
+      setSyncing(false)
     }
   }
-
-  const filtersActive = filtroFornitore !== 'tutti' || filtroCategoria !== 'tutti'
-  const occupancyRate = imbarcazioniFiltrate.length > 0
-    ? Math.round((prenotazioni.length / (imbarcazioniFiltrate.length * monthDays.length)) * 100)
-    : 0
-
-  if (loading) {
-    return <div className="p-4 md:p-8"><div className="text-gray-600">Caricamento planning...</div></div>
+  async function rimuoviBlocco(id: string) {
+    try {
+      const { error } = await supabase.from('blocchi_imbarcazioni').delete().eq('id', id)
+      if (error) throw error
+      toast.success('Blocco rimosso!'); loadData()
+      trackAction('disponibilita', 'sblocco', { blocco_id: id })
+    } catch (e) { toast.error('Errore rimozione blocco') }
   }
+
+  // ═══ RENDER CELL ═══
+  function renderCell(barca: any, day: Date) {
+    const cs = getCellStatus(barca.id, day)
+    const isToday = isSameDay(day, new Date())
+    const isWeekend = [0, 6].includes(day.getDay())
+
+    let bg = isWeekend ? 'bg-orange-50/60 hover:bg-orange-100' : 'bg-green-50 hover:bg-green-100'
+    let border = 'border-l-green-300'
+    let content = null
+
+    if (cs.type === 'prenotazione') {
+      const st = cs.data.stato
+      if (st === 'confermata') { bg = 'bg-emerald-100 hover:bg-emerald-200'; border = 'border-l-emerald-500' }
+      else if (st === 'in_attesa') { bg = 'bg-amber-100 hover:bg-amber-200'; border = 'border-l-amber-500' }
+      else if (st === 'completata') { bg = 'bg-blue-100 hover:bg-blue-200'; border = 'border-l-blue-500' }
+      else { bg = 'bg-purple-100 hover:bg-purple-200'; border = 'border-l-purple-500' }
+      content = <span className="text-[9px] font-bold text-gray-700">{cs.data.numero_persone}p</span>
+    } else if (cs.type === 'blocco') {
+      bg = 'bg-gray-200 hover:bg-gray-300'; border = 'border-l-gray-500'
+      content = <span className="text-[9px] text-gray-500">🚫</span>
+    } else if (cs.type === 'ns3000_booking') {
+      bg = 'bg-red-100 hover:bg-red-200'; border = 'border-l-red-400'
+      content = <span className="text-[10px] text-red-600">🚫</span>
+    } else if (cs.type === 'ns3000_occupato') {
+      bg = 'bg-red-100 hover:bg-red-200'; border = 'border-l-red-400'
+      content = <span className="text-[10px] text-red-600">🚫</span>
+    } else if (cs.type === 'ns3000_parziale') {
+      bg = 'bg-amber-50 hover:bg-amber-100'; border = 'border-l-amber-400'
+      content = <span className="text-[9px] text-amber-700">{cs.slots?.morning ? 'PM' : 'AM'}</span>
+    }
+
+    return (
+      <td key={`${barca.id}-${day.toISOString()}`} className="border border-gray-100 p-0" style={{ width: `${colSizes.giorno}px`, minWidth: `${colSizes.giorno}px` }}>
+        <button onClick={(e) => handleCellClick(barca, day, e)}
+          className={`w-full flex items-center justify-center border-l-2 transition-all ${bg} ${border} ${isToday ? 'ring-1 ring-inset ring-blue-300' : ''}`}
+          style={{ height: `${colSizes.altezza}px` }}>
+          {content}
+        </button>
+      </td>
+    )
+  }
+
+  if (loading) return <div className="p-4 md:p-8 text-gray-600">Caricamento planning...</div>
 
   return (
     <div className="p-1 md:p-2 lg:p-3 h-screen flex flex-col">
 
-      {/* ── HEADER ── */}
-      <div className="mb-3 bg-gray-50 rounded-xl p-3 md:p-5">
-        <div className="flex items-center gap-3 mb-3">
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Planning Mensile</h1>
+      {/* HEADER */}
+      <div className="mb-2 bg-gray-50 rounded-xl p-3 md:p-4">
+        <div className="flex items-center gap-3 mb-2">
+          <h1 className="text-lg md:text-2xl font-bold text-gray-900">Planning</h1>
+          <span className="text-sm md:text-base font-extrabold text-gray-900">{monthNames[currentMonth]} {currentYear}</span>
           {isOperatore && (
-            <span className="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full border border-green-200">
-              👤 Vista Operatore — Solo le tue imbarcazioni
-            </span>
+            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-semibold rounded-full border border-green-200">👤 Operatore</span>
           )}
-        </div>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="text-base md:text-lg font-extrabold text-gray-900 tracking-wide">{monthNames[currentMonth]}</span>
-            <select value={currentMonth} onChange={(e) => handleMonthChange(parseInt(e.target.value))}
-              className="px-2 py-1.5 border border-blue-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 font-medium text-blue-700">
-              {['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'].map((m, i) => <option key={i} value={i}>{m}</option>)}
-            </select>
-            <select value={currentYear} onChange={(e) => handleYearChange(parseInt(e.target.value))}
-              className="px-2 py-1.5 border border-blue-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 font-medium text-blue-700">
-              {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={goToPreviousMonth} className="px-3 md:px-4 py-1.5 md:py-2 border border-gray-300 rounded-lg hover:bg-white text-xs md:text-sm bg-white">◀ Prec</button>
-            <button onClick={goToToday} className="px-4 md:px-5 py-1.5 md:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs md:text-sm font-semibold shadow-sm">Oggi</button>
-            <button onClick={goToNextMonth} className="px-3 md:px-4 py-1.5 md:py-2 border border-gray-300 rounded-lg hover:bg-white text-xs md:text-sm bg-white">Succ ▶</button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── LEGENDA ── */}
-      <div className="mb-2 bg-white rounded-lg shadow-sm border border-gray-200 px-3 py-2">
-        <div className="flex flex-wrap items-center gap-3 md:gap-5 text-xs md:text-sm">
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-amber-400 rounded-full"></div><span className="text-gray-700">In Attesa</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-emerald-500 rounded-full"></div><span className="text-gray-700">Confermata</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-teal-500 rounded-full"></div><span className="text-gray-700">Collettivo BA</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-gray-300 rounded-full"></div><span className="text-gray-700">Bloccata</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-indigo-400 rounded-full"></div><span className="text-gray-700">⛵ Collettivo NS3000</span></div>
-        </div>
-      </div>
-
-      {/* ── FILTRI + STATS ── */}
-      <div className="mb-2 flex items-center gap-2">
-        {!isOperatore && (
-          <>
-            <button onClick={() => setShowFiltri(!showFiltri)}
-              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${filtersActive ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
-              🔍 Filtri {filtersActive && '●'}
-            </button>
-            <button onClick={() => setShowNs3000(!showNs3000)}
-              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${showNs3000 ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-medium' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
-              ⛵ NS3000 {ns3000Boats.length > 0 && `(${ns3000Boats.length})`}
-            </button>
-            {filtersActive && (
-              <button onClick={() => { setFiltroFornitore('tutti'); setFiltroCategoria('tutti') }} className="text-xs text-red-500 hover:text-red-700">✕ Reset</button>
+          <div className="flex gap-1 ml-auto">
+            <button onClick={() => setCurrentMonthStart(subMonths(currentMonthStart, 1))} className="px-2 py-1 border border-gray-300 rounded text-xs bg-white hover:bg-gray-50">◀</button>
+            <button onClick={() => setCurrentMonthStart(startOfMonth(new Date()))} className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-semibold">Oggi</button>
+            <button onClick={() => setCurrentMonthStart(addMonths(currentMonthStart, 1))} className="px-2 py-1 border border-gray-300 rounded text-xs bg-white hover:bg-gray-50">▶</button>
+            {!isOperatore && (
+              <button 
+                onClick={syncNs3000}
+                disabled={syncing}
+                className={`px-3 py-1 rounded text-xs font-semibold ml-2 ${syncing ? 'bg-gray-300 text-gray-500' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+              >
+                {syncing ? '⏳ Sync...' : '🔄 Sync NS3000'}
+              </button>
             )}
-          </>
-        )}
-        <div className={`${isOperatore ? '' : 'hidden sm:flex'} flex items-center gap-3 ml-auto text-xs text-gray-500`}>
-          <span>🚤 <strong className="text-gray-900">{imbarcazioniFiltrate.length}</strong> barche</span>
-          {!isOperatore && (
-            <>
-              <span>📋 <strong className="text-blue-600">{prenotazioni.length}</strong> prenot.</span>
-              <span>🚫 <strong className="text-red-600">{blocchiFiltrati.length}</strong> blocchi</span>
-              <span>📊 <strong className="text-purple-600">{occupancyRate}%</strong></span>
-            </>
-          )}
-          {isOperatore && <span>🚫 <strong className="text-red-600">{blocchiFiltrati.length}</strong> blocchi attivi</span>}
-        </div>
-      </div>
-
-      {/* ── FILTRI ESPANSI ── */}
-      {!isOperatore && showFiltri && (
-        <div className="mb-2 p-3 bg-white rounded-lg border border-gray-200 shadow-sm">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Fornitore</label>
-              <select value={filtroFornitore} onChange={(e) => setFiltroFornitore(e.target.value)}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs md:text-sm focus:ring-2 focus:ring-blue-500">
-                <option value="tutti">Tutti ({imbarcazioni.length})</option>
-                {fornitori.filter(f => f.id !== NS3000_FORNITORE_ID).map(f => {
-                  const count = imbarcazioni.filter(b => b.fornitore_id === f.id).length
-                  return <option key={f.id} value={f.id}>{f.ragione_sociale} ({count})</option>
-                })}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Categoria</label>
-              <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs md:text-sm focus:ring-2 focus:ring-blue-500">
-                <option value="tutti">Tutte</option>
-                <option value="luxury">Luxury</option>
-                <option value="premium">Premium</option>
-                <option value="simple">Simple</option>
-              </select>
-            </div>
           </div>
         </div>
-      )}
 
-      {/* ── STATS MOBILE ── */}
-      {!isOperatore && (
-        <div className="sm:hidden mb-2 grid grid-cols-4 gap-1.5 text-center">
-          {[
-            { val: imbarcazioniFiltrate.length, icon: '🚤', color: 'text-gray-900' },
-            { val: prenotazioni.length, icon: '📋', color: 'text-blue-600' },
-            { val: blocchiFiltrati.length, icon: '🚫', color: 'text-red-600' },
-            { val: `${occupancyRate}%`, icon: '📊', color: 'text-purple-600' },
-          ].map(({ val, icon, color }, i) => (
-            <div key={i} className="bg-white rounded-lg border border-gray-200 py-1.5 px-1">
-              <div className={`text-sm font-bold ${color}`}>{val}</div>
-              <div className="text-xs text-gray-500">{icon}</div>
+        {/* FILTRI TOUR */}
+        {!isOperatore && (
+          <div className="space-y-1.5">
+            {/* Filtro Tour */}
+            {/* Filtro Tour + Pax */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={filtroTour}
+                onChange={(e) => setFiltroTour(e.target.value)}
+                className="text-xs px-3 py-1.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 font-medium text-gray-700 max-w-[200px] sm:max-w-none"
+              >
+                <option value="tutti">🚤 Tutti i tour</option>
+                {servizi.filter(s => !s.nome.includes('Sunset') && !s.nome.includes('Taxi')).map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.nome.replace(/^\d+\s*-\s*/, '')}{s.prezzo_per_persona ? ' (👤/pax)' : ''}
+                  </option>
+                ))}
+              </select>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-gray-400">Pax:</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  value={filtroPax || ''}
+                  onChange={(e) => setFiltroPax(parseInt(e.target.value) || 0)}
+                  placeholder="—"
+                  className="w-14 text-xs px-2 py-1.5 border border-gray-300 rounded-lg bg-white text-center focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              {(filtroTour !== 'tutti' || filtroPax > 0) && (
+                <button onClick={() => { setFiltroTour('tutti'); setFiltroPax(0) }} className="text-xs text-red-500 hover:text-red-700">✕ Reset</button>
+              )}
             </div>
-          ))}
-        </div>
-      )}
+            {/* Filtro Tipo Barca */}
+            <div className="flex flex-wrap gap-1.5">
+              <span className="text-[10px] text-gray-400 self-center mr-1">Tipo:</span>
+              <button onClick={() => setFiltroTipo('tutti')}
+                className={`text-[11px] px-2.5 py-1.5 rounded-lg border transition-colors ${filtroTipo === 'tutti' ? 'bg-gray-700 text-white border-gray-700 font-semibold' : 'border-gray-300 text-gray-600 hover:bg-gray-50 bg-white'}`}>
+                Tutti
+              </button>
+              {TIPO_ORDER.map(tipo => (
+                <button key={tipo} onClick={() => setFiltroTipo(tipo)}
+                  className={`text-[11px] px-2.5 py-1.5 rounded-lg border transition-colors ${filtroTipo === tipo ? 'bg-gray-700 text-white border-gray-700 font-semibold' : 'border-gray-300 text-gray-600 hover:bg-gray-50 bg-white'}`}>
+                  {TIPO_LABELS[tipo]}
+                </button>
+               ))}  
+            </div>
+          </div>
+        )}
+      </div>
 
-      {/* ── GRIGLIA ── */}
+      {/* LEGENDA */}
+      <div className="mb-1 flex flex-wrap items-center gap-2 md:gap-4 text-[10px] md:text-xs text-gray-600 px-1">
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-amber-400 rounded-full inline-block"></span>Attesa</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full inline-block"></span>Confermata</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-indigo-500 rounded-full inline-block"></span>NS3000</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-gray-300 rounded-full inline-block"></span>Bloccata</span>
+        <span className="ml-auto text-gray-400">🚤 {totalBoats} barche</span>
+      </div>
+
+      {/* GRIGLIA */}
       <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto overflow-y-auto h-full">
-          <table className="border-collapse" style={{ tableLayout: 'fixed', minWidth: `${colSizes.barca + monthDays.length * colSizes.giorno}px` }}>
+        <div className="overflow-y-auto h-full">
+          <table className="border-collapse w-full" style={{ tableLayout: 'fixed' }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-gray-50">
-                <th className="sticky left-0 z-20 bg-gray-100 border border-gray-200 px-2 py-2 text-left font-semibold text-gray-900 text-xs"
-                  style={{ width: `${colSizes.barca}px`, minWidth: `${colSizes.barca}px` }}>Flotta</th>
-                {monthDays.map((day) => {
+                <th className="sticky left-0 z-20 bg-gray-100 border border-gray-200 px-1 py-2 text-left font-semibold text-gray-900 text-[10px] sm:text-xs"
+                  style={{ width: `${colSizes.barca}px` }}>
+                  Barca {filtroTour !== 'tutti' && <span className="text-green-600 font-normal">/ €</span>}
+                </th>
+                {monthDays.map(day => {
                   const isToday = isSameDay(day, new Date())
                   const isWeekend = [0, 6].includes(day.getDay())
                   return (
                     <th key={day.toISOString()}
-                      className={`border border-gray-200 py-1 text-center font-semibold ${isToday ? 'bg-blue-100 text-blue-700' : isWeekend ? 'bg-orange-50 text-gray-700' : 'text-gray-700'}`}
-                      style={{ width: `${colSizes.giorno}px`, minWidth: `${colSizes.giorno}px` }}>
+                      className={`border border-gray-200 py-1 text-center ${isToday ? 'bg-blue-100 text-blue-700' : isWeekend ? 'bg-orange-50 text-gray-700' : 'text-gray-700'}`}
+                      style={{ width: `${colSizes.giorno}px` }}>
                       <div className="flex flex-col leading-tight">
-                        <span className="text-[9px] font-normal text-gray-400 uppercase">{format(day, 'EEEEE', { locale: it })}</span>
-                        <span className={`text-xs ${isToday ? 'font-bold' : ''}`}>{format(day, 'd')}</span>
+                        <span className="text-[8px] font-normal text-gray-400 uppercase">{format(day, 'EEEEE', { locale: it })}</span>
+                        <span className={`text-[10px] ${isToday ? 'font-bold' : ''}`}>{format(day, 'd')}</span>
                       </div>
                     </th>
                   )
@@ -541,391 +515,124 @@ useEffect(() => {
               </tr>
             </thead>
             <tbody>
-              {imbarcazioniFiltrate.map((barca) => (
-                <tr key={barca.id} className="hover:bg-gray-50/50">
-                  <td className="sticky left-0 z-[5] bg-gray-50 border border-gray-200 px-1 py-1 overflow-hidden"
-                    style={{ width: `${colSizes.barca}px`, minWidth: `${colSizes.barca}px`, maxWidth: `${colSizes.barca}px` }}>
-                    <div className="text-[10px] sm:text-xs font-semibold text-gray-900 leading-tight overflow-hidden text-ellipsis whitespace-nowrap"
-                      style={{ maxWidth: `${colSizes.barca - 8}px` }} title={barca.nome}>{barca.nome}</div>
-                    <div className="text-[9px] text-gray-400 capitalize leading-tight hidden sm:block">{barca.categoria}</div>
-                  </td>
-
-                  {monthDays.map((day) => {
-                    const cellStatus = getCellStatus(barca.id, day)
-                    const isToday = isSameDay(day, new Date())
-                    const isWeekend = [0, 6].includes(day.getDay())
-                    const dateStr = format(day, 'yyyy-MM-dd')
-
-                    // ⭐ Pax collettivi NS3000 su questa barca/data
-                    const ns3000CollPax = ns3000CollectivePaxMap[`${barca.id}|${dateStr}`] || 0
-
-                    let bgColor = isWeekend ? 'bg-orange-50/60 hover:bg-orange-100' : 'bg-green-50 hover:bg-green-100'
-                    let borderColor = 'border-l-green-300'
-                    let content: React.ReactNode = null
-
-                    if (cellStatus.type === 'prenotazione') {
-                      const stato = cellStatus.data.stato
-                      const isCollettivo = cellStatus.data.tipo_tour === 'collettivo'
-                      if (stato === 'confermata') {
-                        bgColor = isCollettivo ? 'bg-teal-100 hover:bg-teal-200' : 'bg-emerald-100 hover:bg-emerald-200'
-                        borderColor = isCollettivo ? 'border-l-teal-500' : 'border-l-emerald-500'
-                      } else if (stato === 'in_attesa') {
-                        bgColor = 'bg-amber-100 hover:bg-amber-200'
-                        borderColor = 'border-l-amber-500'
-                      } else if (stato === 'completata') {
-                        bgColor = 'bg-blue-100 hover:bg-blue-200'
-                        borderColor = 'border-l-blue-500'
-                      } else {
-                        bgColor = 'bg-purple-100 hover:bg-purple-200'
-                        borderColor = 'border-l-purple-500'
-                      }
-                      content = (
-                        <div className="flex flex-col items-center">
-                          <span className="text-[9px] font-bold text-gray-700 leading-none">{cellStatus.data.numero_persone}p</span>
-                          {ns3000CollPax > 0 && (
-                            <span className="text-[8px] text-indigo-600 font-semibold leading-none mt-0.5">⛵{ns3000CollPax}</span>
-                          )}
-                        </div>
-                      )
-                    } else if (cellStatus.type === 'blocco') {
-                      bgColor = 'bg-gray-200 hover:bg-gray-300'
-                      borderColor = 'border-l-gray-500'
-                      content = <span className="text-[9px] text-gray-500">🚫</span>
-                    } else if (ns3000CollPax > 0) {
-                      // ⭐ Cella BA libera ma con pax collettivi NS3000
-                      bgColor = 'bg-indigo-50 hover:bg-indigo-100'
-                      borderColor = 'border-l-indigo-400'
-                      content = <span className="text-[9px] font-bold text-indigo-600 leading-none">⛵{ns3000CollPax}p</span>
-                    }
-
+              {groupedBoats.map(group => (
+                <>{/* Group header */}
+                  <tr key={`gh-${group.tipo}`}>
+                    <td colSpan={monthDays.length + 1} className="bg-gray-100 border border-gray-200 px-2 py-1 sticky left-0 z-[5]">
+                      <span className="text-xs font-bold text-gray-700">{group.label}</span>
+                      <span className="text-[10px] text-gray-400 ml-1.5">({group.boats.length})</span>
+                    </td>
+                  </tr>
+                  {group.boats.map(barca => {
+                    const prezzo = prezziMap[barca.id]
+                    const isNs = barca.fornitore_id === NS3000_FORNITORE_ID
                     return (
-                      <td key={`${barca.id}-${day.toISOString()}`} className="border border-gray-100 p-0"
-                        style={{ width: `${colSizes.giorno}px`, minWidth: `${colSizes.giorno}px` }}>
-                        <button
-                          onClick={(e) => handleCellClick(barca.id, barca.nome, day, e)}
-                          className={`w-full flex flex-col items-center justify-center border-l-2 transition-all ${bgColor} ${borderColor} ${isToday ? 'ring-1 ring-inset ring-blue-300' : ''}`}
-                          style={{ height: `${colSizes.altezza}px` }}
-                          title={
-                            cellStatus.type === 'prenotazione'
-                              ? `${cellStatus.data.codice_prenotazione} · ${cellStatus.data.numero_persone} pax${ns3000CollPax > 0 ? ` + ⛵${ns3000CollPax} NS3000` : ''}`
-                              : cellStatus.type === 'blocco'
-                              ? `Bloccata: ${cellStatus.data.motivo || 'Indisponibilità'}`
-                              : ns3000CollPax > 0
-                              ? `⛵ ${ns3000CollPax} pax collettivo NS3000`
-                              : 'Disponibile'
-                          }
-                        >
-                          {content}
-                        </button>
-                      </td>
+                      <tr key={barca.id} className="hover:bg-gray-50/50">
+                        <td className={`sticky left-0 z-[5] border border-gray-200 px-1 py-0.5 overflow-hidden ${isNs ? 'bg-indigo-50' : 'bg-gray-50'}`}
+                          style={{ width: `${colSizes.barca}px` }}>
+                          <div className={`text-[10px] sm:text-xs font-semibold leading-tight overflow-hidden text-ellipsis whitespace-nowrap ${isNs ? 'text-indigo-900' : 'text-gray-900'}`}
+                            style={{ maxWidth: `${colSizes.barca - 6}px` }} title={barca.nome}>
+                            {isNs && <span className="text-indigo-400 mr-0.5">⛵</span>}{barca.nome}
+                          </div>
+                          {prezzo ? (
+                            <div className="text-[9px] font-bold text-green-600 leading-tight">
+                              €{prezzo}{isCollettivo ? '/pax' : ''}
+                            </div>
+                          ) : (
+                            <div className="text-[9px] text-gray-400 capitalize leading-tight hidden sm:block">{barca.categoria}</div>
+                          )}
+                        </td>
+                        {monthDays.map(day => renderCell(barca, day))}
+                      </tr>
                     )
                   })}
-                </tr>
+                </>
               ))}
             </tbody>
           </table>
 
-          {/* ── SEZIONE NS3000 ── */}
-          {!isOperatore && showNs3000 && ns3000Boats.length > 0 && (
-            <table className="border-collapse" style={{ tableLayout: 'fixed', width: '100%', minWidth: `${colSizes.barca + monthDays.length * colSizes.giorno}px` }}>
-              <thead>
-              <tr className="bg-indigo-600">
-                <th className="sticky left-0 z-20 bg-indigo-600 border border-indigo-500 px-2 py-1 text-left text-white text-xs font-bold"
-                  style={{ width: `${colSizes.barca}px`, minWidth: `${colSizes.barca}px` }}>
-                  ⛵ NS3000 — {ns3000Boats.length} barche
-                </th>
-                {monthDays.map((day) => {
-                  const isToday = isSameDay(day, new Date())
-                  const isWeekend = [0, 6].includes(day.getDay())
-                  return (
-                    <th key={day.toISOString()}
-                      className={`border border-indigo-500 py-1 text-center font-semibold ${isToday ? 'bg-indigo-400 text-white' : isWeekend ? 'bg-indigo-700 text-indigo-200' : 'bg-indigo-600 text-indigo-200'}`}
-                      style={{ width: `${colSizes.giorno}px`, minWidth: `${colSizes.giorno}px` }}>
-                      <div className="flex flex-col leading-tight">
-                        <span className="text-[9px] font-normal opacity-70 uppercase">{format(day, 'EEEEE', { locale: it })}</span>
-                        <span className={`text-xs ${isToday ? 'font-bold' : ''}`}>{format(day, 'd')}</span>
-                      </div>
-                    </th>
-                  )
-                })}
-              </tr>
-            </thead>
-              <tbody>
-                {ns3000Boats.map((boat) => (
-                  <tr key={`ns-${boat.boat_id}`} className="hover:bg-indigo-50">
-                    <td className="sticky left-0 z-[5] bg-indigo-50 border border-gray-200 px-2 py-1"
-                      style={{ width: `${colSizes.barca}px`, minWidth: `${colSizes.barca}px` }}>
-                      <div className="text-xs font-semibold text-indigo-900 truncate leading-tight">{boat.name}</div>
-                      <div className="text-[10px] text-indigo-400 truncate leading-tight">{boat.boat_type} · {boat.max_passengers}p</div>
-                    </td>
-                    {monthDays.map((day) => {
-                      const cellStatus = getNs3000CellStatus(boat.boat_id, day)
-                      const isToday = isSameDay(day, new Date())
-                      let bgColor = 'bg-green-50 hover:bg-green-100'
-                      let borderColor = 'border-l-green-300'
-                      let content: React.ReactNode = null
-
-                      if (cellStatus.type === 'occupato') {
-                        bgColor = 'bg-indigo-100 hover:bg-indigo-200'
-                        borderColor = 'border-l-indigo-500'
-                        content = cellStatus.booking ? (
-                          <span className="text-[9px] font-bold text-indigo-700 leading-none">{cellStatus.booking.num_passengers}p</span>
-                        ) : null
-                      } else if (cellStatus.type === 'parziale') {
-                        bgColor = 'bg-amber-50 hover:bg-amber-100'
-                        borderColor = 'border-l-amber-400'
-                        const slots = cellStatus.slots
-                        content = <span className="text-[9px] text-amber-700 leading-none">{slots?.morning ? 'PM' : 'AM'}</span>
-                      } else if (cellStatus.type === 'unknown') {
-                        bgColor = 'bg-gray-50'
-                        borderColor = 'border-l-gray-200'
-                      }
-
-                      return (
-                        <td key={`ns-${boat.boat_id}-${day.toISOString()}`} className="border border-gray-100 p-0"
-                          style={{ width: `${colSizes.giorno}px`, minWidth: `${colSizes.giorno}px` }}>
-                          <button
-                            onClick={() => handleNs3000CellClick(boat.boat_id, boat.name, day)}
-                            className={`w-full flex flex-col items-center justify-center border-l-2 transition-all ${bgColor} ${borderColor} ${isToday ? 'ring-1 ring-inset ring-blue-300' : ''}`}
-                            style={{ height: `${colSizes.altezza}px` }}
-                            title={
-                              cellStatus.type === 'occupato'
-                                ? `Prenotata${cellStatus.booking ? ` · ${cellStatus.booking.customer_name} ${cellStatus.booking.customer_surname}` : ''}`
-                                : cellStatus.type === 'parziale' ? 'Parzialmente disponibile'
-                                : 'Disponibile'
-                            }
-                          >
-                            {content}
-                          </button>
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {ns3000Loading && <div className="text-center py-3 text-xs text-indigo-500">Caricamento barche NS3000...</div>}
-
-          {imbarcazioniFiltrate.length === 0 && (
+          {totalBoats === 0 && (
             <div className="text-center py-12 text-gray-500">
-              {filtersActive ? 'Nessuna imbarcazione trovata con i filtri selezionati' : 'Nessuna imbarcazione attiva trovata'}
+              {filtroTour !== 'tutti' ? 'Nessuna barca disponibile per questo tour' : 'Nessuna imbarcazione attiva'}
             </div>
           )}
         </div>
       </div>
 
-      <div className="mt-2 text-xs text-gray-400 text-center">
-        💡 Tocca una cella per vedere i dettagli · Cella vuota per bloccare · 🟠 Weekend · ⛵ Collettivo NS3000
-      </div>
+      <div className="mt-1 text-[10px] text-gray-400 text-center">Tocca cella per dettagli · Cella vuota per prenotare/bloccare · 🟠 Weekend</div>
 
-      {/* ── MODAL BLOCCO ── */}
+      {/* MODAL BLOCCO */}
       {showBloccoModal && selectedCell && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full p-5">
             <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">{isOperatore ? '📅 Gestisci Disponibilità' : '🚫 Blocca Disponibilità'}</h2>
-                {isOperatore && <p className="text-xs text-gray-500 mt-0.5">Dichiara indisponibilità per questo periodo</p>}
-              </div>
-              <button onClick={() => setShowBloccoModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+              <h2 className="text-lg font-bold">{isOperatore ? '📅 Gestisci Disponibilità' : 'Blocca Disponibilità'}</h2>
+              <button onClick={() => setShowBloccoModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
             </div>
             <div className="mb-4 bg-gray-50 rounded-lg p-3">
-              <p className="text-sm text-gray-700"><strong>🚤 {selectedCell.imbarcazioneNome}</strong></p>
+              <p className="text-sm"><strong>🚤 {selectedCell.imbarcazioneNome}</strong></p>
+              <p className="text-sm text-gray-600">📅 {format(selectedCell.date, 'EEEE dd MMMM yyyy', { locale: it })}</p>
             </div>
-            <div className="space-y-4">
-              {/* Range date */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Dal</label>
-                  <input
-                    type="date"
-                    value={format(selectedCell.date, 'yyyy-MM-dd')}
-                    disabled
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700 font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Al</label>
-                  <input
-                    type="date"
-                    value={dataFineBlocco || format(selectedCell.date, 'yyyy-MM-dd')}
-                    min={format(selectedCell.date, 'yyyy-MM-dd')}
-                    onChange={(e) => setDataFineBlocco(e.target.value)}
-                    className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-              {/* Anteprima durata */}
-              {(() => {
-                const fine = dataFineBlocco || format(selectedCell.date, 'yyyy-MM-dd')
-                const giorni = Math.round((new Date(fine).getTime() - selectedCell.date.getTime()) / 86400000) + 1
-                return giorni > 1 ? (
-                  <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-xs text-orange-700 font-medium">
-                    ⚠️ Verranno bloccati <strong>{giorni} giorni</strong> — da {format(selectedCell.date, 'dd MMM', { locale: it })} al {format(new Date(fine), 'dd MMM yyyy', { locale: it })}
-                  </div>
-                ) : null
-              })()}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Tipo Blocco</label>
-                <select value={tipoBlocco} onChange={(e) => setTipoBlocco(e.target.value as any)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                  <option value="altro">Altro</option>
-                  <option value="manutenzione">Manutenzione</option>
-                  <option value="prenotazione_esterna">Prenotazione Esterna</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Motivo (opzionale)</label>
-                <textarea value={motivoBlocco} onChange={(e) => setMotivoBlocco(e.target.value)}
-                  placeholder="Es: Manutenzione motore..." className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows={2} />
-              </div>
+            <div className="space-y-3 mb-4">
+              <select value={tipoBlocco} onChange={e => setTipoBlocco(e.target.value as any)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                <option value="altro">Altro</option>
+                <option value="manutenzione">Manutenzione</option>
+                <option value="prenotazione_esterna">Prenotazione Esterna</option>
+              </select>
+              <textarea value={motivoBlocco} onChange={e => setMotivoBlocco(e.target.value)} placeholder="Motivo (opzionale)..." className="w-full px-3 py-2 border rounded-lg text-sm" rows={2} />
             </div>
-            <div className="flex gap-3 mt-5">
-              <button onClick={() => { setShowBloccoModal(false); setDataFineBlocco('') }} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">Annulla</button>
-              <button onClick={creaBlocco} className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">🚫 Blocca Periodo</button>
+            <div className="flex gap-3">
+              <button onClick={() => setShowBloccoModal(false)} className="flex-1 px-4 py-2 border rounded-lg text-sm">Annulla</button>
+              <button onClick={creaBlocco} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium">🚫 Blocca</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── MODAL DETTAGLI PRENOTAZIONE ── */}
+      {/* MODAL DETTAGLI */}
       {showDettagliModal && prenotazioneSelezionata && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 overflow-y-auto">
           <div className="bg-white rounded-xl max-w-2xl w-full p-5 my-4">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">📋 Dettagli Prenotazione</h2>
-              <button onClick={() => setShowDettagliModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+              <h2 className="text-lg font-bold">📋 Dettagli Prenotazione</h2>
+              <button onClick={() => setShowDettagliModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
             </div>
-            {loadingDettagli ? (
-              <div className="text-center py-8 text-gray-600">Caricamento dettagli...</div>
-            ) : (
-              <div className="space-y-4">
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-3 text-center">
-                  <div className="text-xs text-blue-600 font-medium mb-0.5">Codice Prenotazione</div>
-                  <div className="text-2xl font-bold text-blue-900">{prenotazioneSelezionata.codice_prenotazione}</div>
-                  {prenotazioneSelezionata.tipo_tour === 'collettivo' && (
-                    <div className="mt-1 text-xs px-2 py-0.5 bg-teal-100 text-teal-700 rounded-full inline-block font-medium">👥 Tour Collettivo</div>
-                  )}
-                </div>
-                <div className="border-b pb-3">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-2">🚤 Servizio</h3>
-                  <div className="grid grid-cols-2 gap-2 text-xs md:text-sm">
-                    {[
-                      ['Imbarcazione', prenotazioneSelezionata.imbarcazioni?.nome],
-                      ['Servizio', prenotazioneSelezionata.servizi?.nome],
-                      ['Data', format(parseISO(prenotazioneSelezionata.data_servizio), 'dd MMM yyyy', { locale: it })],
-                      ['Ora', prenotazioneSelezionata.ora_imbarco || 'N/A'],
-                      ['Persone', `${prenotazioneSelezionata.numero_persone} pax`],
-                      ['Porto', prenotazioneSelezionata.porto_imbarco || 'N/A'],
-                    ].map(([label, val]) => (
-                      <div key={label}>
-                        <span className="text-gray-500">{label}:</span>
-                        <div className="font-medium text-gray-900">{val || 'N/A'}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="border-b pb-3">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-2">👤 Cliente</h3>
-                  <div className="grid grid-cols-2 gap-2 text-xs md:text-sm">
-                    {[
-                      ['Nome', `${prenotazioneSelezionata.clienti?.nome || ''} ${prenotazioneSelezionata.clienti?.cognome || ''}`],
-                      ['Email', prenotazioneSelezionata.clienti?.email],
-                      ['Telefono', prenotazioneSelezionata.clienti?.telefono],
-                      ['Nazione', prenotazioneSelezionata.clienti?.nazione],
-                    ].map(([label, val]) => (
-                      <div key={label}>
-                        <span className="text-gray-500">{label}:</span>
-                        <div className="font-medium text-gray-900 truncate">{val || 'N/A'}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900 mb-2">📊 Stato</h3>
-                  <span className={`inline-block px-3 py-1.5 rounded-lg text-sm font-medium ${
-                    prenotazioneSelezionata.stato === 'confermata' ? 'bg-green-100 text-green-800' :
-                    prenotazioneSelezionata.stato === 'in_attesa' ? 'bg-yellow-100 text-yellow-800' :
-                    prenotazioneSelezionata.stato === 'completata' ? 'bg-blue-100 text-blue-800' :
-                    'bg-gray-100 text-gray-800'}`}>
-                    {prenotazioneSelezionata.stato}
-                  </span>
-                </div>
-                {prenotazioneSelezionata.note_cliente && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-1">📝 Note Cliente</h3>
-                    <div className="bg-gray-50 rounded-lg p-2.5 text-xs md:text-sm text-gray-700">{prenotazioneSelezionata.note_cliente}</div>
-                  </div>
-                )}
+            <div className="space-y-3">
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-3 text-center">
+                <div className="text-xs text-blue-600">Codice</div>
+                <div className="text-2xl font-bold text-blue-900">{prenotazioneSelezionata.codice_prenotazione}</div>
               </div>
-            )}
-            <div className="mt-5">
-              <button onClick={() => setShowDettagliModal(false)} className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">Chiudi</button>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {[
+                  ['Barca', prenotazioneSelezionata.imbarcazioni?.nome],
+                  ['Servizio', prenotazioneSelezionata.servizi?.nome],
+                  ['Data', format(parseISO(prenotazioneSelezionata.data_servizio), 'dd MMM yyyy', { locale: it })],
+                  ['Pax', `${prenotazioneSelezionata.numero_persone}`],
+                  ['Cliente', `${prenotazioneSelezionata.clienti?.nome || ''} ${prenotazioneSelezionata.clienti?.cognome || ''}`],
+                  ['Email', prenotazioneSelezionata.clienti?.email],
+                  ['Telefono', prenotazioneSelezionata.clienti?.telefono],
+                  ['Prezzo', `€${parseFloat(prenotazioneSelezionata.prezzo_totale || 0).toFixed(2)}`],
+                  ['Stato', prenotazioneSelezionata.stato],
+                  ['Pagamento', prenotazioneSelezionata.stato_pagamento || 'N/A'],
+                ].map(([l, v]) => (<div key={l}><span className="text-gray-500 text-xs">{l}:</span><div className="font-medium">{v || 'N/A'}</div></div>))}
+              </div>
             </div>
+            <button onClick={() => setShowDettagliModal(false)} className="w-full mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium">Chiudi</button>
           </div>
         </div>
       )}
 
-      {/* ── CONTEXT MENU ── */}
-      {contextMenu && (
-        <div ref={contextMenuRef} className="fixed z-[9999] bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
-          style={{ left: contextMenu.x, top: contextMenu.y, minWidth: '220px' }}>
-          <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-100">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{format(contextMenu.date, 'd MMM yyyy', { locale: it })}</p>
-            <p className="text-sm font-bold text-gray-900 truncate mt-0.5">{contextMenu.imbarcazioneNome}</p>
-          </div>
-          <div className="p-1.5 space-y-0.5">
-            <button onClick={openNewBooking} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-blue-50 transition-colors text-left group">
-              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 flex-shrink-0">
-                <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-gray-900">Nuova Prenotazione</div>
-                <div className="text-xs text-gray-500 truncate">{contextMenu.imbarcazioneNome} · {format(contextMenu.date, 'd MMM', { locale: it })}</div>
-              </div>
-            </button>
-            <button onClick={openBloccoFromMenu} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-red-50 transition-colors text-left group">
-              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center group-hover:bg-red-200 flex-shrink-0">
-                <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                </svg>
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-gray-900">Indisponibilità</div>
-                <div className="text-xs text-gray-500 truncate">Blocca {contextMenu.imbarcazioneNome}</div>
-              </div>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── BOOKING MODAL ── */}
-      <BookingModal
-        isOpen={showNewBookingModal}
-        onClose={() => setShowNewBookingModal(false)}
-        onSave={() => { setShowNewBookingModal(false); loadData(); toast.success('Prenotazione creata!') }}
-        initialDate={newBookingInitialDate}
-        initialImbarcazioneId={newBookingInitialImbarcazione}
-        initialNs3000BoatId={newBookingInitialNs3000BoatId}
-        initialNs3000BoatName={newBookingInitialNs3000BoatName}
-        initialBoatSource={newBookingInitialNs3000BoatId ? 'ns3000' : 'locale'}
-      />
-
-      {/* ── MODAL DETTAGLI NS3000 ── */}
+      {/* MODAL NS3000 DETTAGLI */}
       {showNs3000Dettagli && ns3000BookingDetail && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3">
           <div className="bg-white rounded-xl max-w-lg w-full p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-indigo-900">⛵ Prenotazione NS3000</h2>
-              <button onClick={() => setShowNs3000Dettagli(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+              <button onClick={() => setShowNs3000Dettagli(false)} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
             </div>
             <div className="space-y-3">
               <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-3 text-center">
-                <div className="text-xs text-indigo-600 font-medium mb-0.5">Codice</div>
+                <div className="text-xs text-indigo-600">Codice</div>
                 <div className="text-xl font-bold text-indigo-900">{ns3000BookingDetail.booking_number}</div>
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
@@ -933,29 +640,38 @@ useEffect(() => {
                   ['Barca', ns3000BookingDetail.boats?.name],
                   ['Data', ns3000BookingDetail.booking_date],
                   ['Fascia', ns3000BookingDetail.time_slot?.replace('_', ' ')],
-                  ['Passeggeri', `${ns3000BookingDetail.num_passengers} pax`],
+                  ['Pax', `${ns3000BookingDetail.num_passengers}`],
                   ['Cliente', `${ns3000BookingDetail.customer_name} ${ns3000BookingDetail.customer_surname}`],
                   ['Email', ns3000BookingDetail.customer_email],
                   ['Prezzo', `€${parseFloat(ns3000BookingDetail.final_price || 0).toFixed(2)}`],
-                  ['Origine', ns3000BookingDetail.source || 'ns3000'],
-                ].map(([label, val]) => (
-                  <div key={label}>
-                    <span className="text-gray-500 text-xs">{label}:</span>
-                    <div className={`font-medium truncate ${label === 'Prezzo' ? 'text-green-600' : ''}`}>{val || 'N/A'}</div>
-                  </div>
-                ))}
+                ].map(([l, v]) => (<div key={l}><span className="text-gray-500 text-xs">{l}:</span><div className="font-medium truncate">{v || 'N/A'}</div></div>))}
               </div>
-              {ns3000BookingDetail.notes && (
-                <div>
-                  <span className="text-gray-500 text-xs">Note:</span>
-                  <div className="bg-gray-50 rounded-lg p-2 text-sm text-gray-700 mt-1">{ns3000BookingDetail.notes}</div>
-                </div>
-              )}
             </div>
-            <button onClick={() => setShowNs3000Dettagli(false)} className="w-full mt-4 px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium">Chiudi</button>
+            <button onClick={() => setShowNs3000Dettagli(false)} className="w-full mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium">Chiudi</button>
           </div>
         </div>
       )}
+
+      {/* CONTEXT MENU */}
+      {contextMenu && (
+        <div ref={contextMenuRef} className="fixed z-[9999] bg-white rounded-xl shadow-2xl border overflow-hidden" style={{ left: contextMenu.x, top: contextMenu.y, minWidth: '200px' }}>
+          <div className="bg-gray-50 px-3 py-2 border-b">
+            <p className="text-xs font-semibold text-gray-500">{format(contextMenu.date, 'd MMM yyyy', { locale: it })}</p>
+            <p className="text-sm font-bold text-gray-900 truncate">{contextMenu.imbarcazioneNome}</p>
+          </div>
+          <div className="p-1">
+            <button onClick={openNewBooking} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-blue-50 text-sm">📅 <span className="font-semibold">Nuova Prenotazione</span></button>
+            <button onClick={openBloccoFromMenu} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-red-50 text-sm">🚫 <span className="font-semibold">Blocca</span></button>
+          </div>
+        </div>
+      )}
+
+      {/* BOOKING MODAL */}
+      <BookingModal isOpen={showNewBookingModal} onClose={() => setShowNewBookingModal(false)}
+        onSave={() => { setShowNewBookingModal(false); loadData(); toast.success('Prenotazione creata!') }}
+        initialDate={newBookingInitialDate} initialImbarcazioneId={newBookingInitialImbarcazione}
+        initialNs3000BoatId={newBookingInitialNs3000BoatId} initialNs3000BoatName={newBookingInitialNs3000BoatName}
+        initialBoatSource={newBookingInitialNs3000BoatId ? 'ns3000' : 'locale'} />
     </div>
   )
 }
