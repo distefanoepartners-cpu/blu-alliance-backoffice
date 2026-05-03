@@ -58,8 +58,10 @@ function DashboardLayoutContent({
     // Operatore: vede solo le sue barche + la propria scheda fornitore
     { href: '/dashboard/mie-barche', label: 'Le mie Barche', icon: Ship, roles: ['operatore'] },
     { href: '/dashboard/mia-azienda', label: 'La mia Azienda', icon: Building2, roles: ['operatore'] },
-{ href: '/dashboard/mie-prenotazioni', label: 'Le mie Prenotazioni', icon: Calendar, roles: ['operatore'] },
+    { href: '/dashboard/mie-prenotazioni', label: 'Le mie Prenotazioni', icon: Calendar, roles: ['operatore'] },
+    { href: '/dashboard/contatti', label: 'Contatti', icon: Users, roles: ['admin', 'staff'] },
     { href: '/dashboard/skipper', label: 'I miei Skipper', icon: UserCircle, roles: ['operatore'] },
+    { href: '/dashboard/navi', label: 'Navi', icon: Ship, roles: ['admin', 'operatore', 'staff'] },
   ]
 
   // ═══ SOTTOMENU AMMINISTRAZIONE (solo admin) ═══
@@ -73,6 +75,8 @@ function DashboardLayoutContent({
     { href: '/dashboard/chatbot-leads', label: 'Chatbot Leads', icon: MessageSquare },
     { href: '/dashboard/amministratori', label: 'Gestione Utenti', icon: ShieldCheck },
     { href: '/dashboard/monitoraggio', label: 'Monitoraggio', icon: BarChart3 },
+    { href: '/dashboard/rendiconto', label: 'Rendiconto', icon: DollarSign },  // ← AGGIUNGI QUESTA
+
   ]
 
   function isActive(href: string) {

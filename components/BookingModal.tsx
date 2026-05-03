@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import toast from 'react-hot-toast'
+import { trackAction } from '@/lib/useActivityTracker'
 
 interface BookingModalProps {
   isOpen: boolean
@@ -95,6 +96,8 @@ export default function BookingModal({
     patente_nautica: '', scadenza_patente_nautica: ''
   })
   const [clienteEsistente, setClienteEsistente] = useState(false)
+  const [nazioneManuale, setNazioneManuale] = useState(false)
+  
 
   const [formData, setFormData] = useState({
     codice_prenotazione: '', cliente_id: '', servizio_id: '', imbarcazione_id: '',
@@ -133,6 +136,24 @@ export default function BookingModal({
         porto_imbarco: prenotazione.porto_imbarco || '',
         ora_imbarco: prenotazione.ora_imbarco || ''
       })
+
+      // ← FIX: ripristina stato NS3000 se la prenotazione viene da NS3000
+      const isNs3000 =
+        prenotazione.source === 'ns3000' ||
+        !!prenotazione.ns3000_booking_id ||
+        !!prenotazione.ns3000_booking_number
+      if (isNs3000) {
+        setBoatSource('ns3000')
+        const mappedNs3000Id = prenotazione.imbarcazione_id
+          ? BA_TO_NS3000_MAP[prenotazione.imbarcazione_id]
+          : null
+        setNs3000BoatId(mappedNs3000Id || prenotazione.ns3000_boat_id || '')
+        setNs3000TimeSlot(prenotazione.ns3000_time_slot || 'full_day')
+      } else {
+        setBoatSource('locale')
+        setNs3000BoatId('')
+      }
+
       if (prenotazione.clienti) {
         const c = prenotazione.clienti
         setClienteForm({
@@ -143,6 +164,7 @@ export default function BookingModal({
           scadenza_patente_nautica: c.scadenza_patente_nautica || ''
         })
         setClienteEsistente(true)
+        setNazioneManuale(!['IT','GB','US','FR','DE','ES','NL','CH'].includes(c.nazione || 'IT'))
       }
     } else if (isOpen && !prenotazione) {
       setFormData({
@@ -159,6 +181,7 @@ export default function BookingModal({
       setNs3000Availability(null)
       setClienteForm({ nome: '', cognome: '', email: '', telefono: '', nazione: 'IT', tipo_documento: '', numero_documento: '', scadenza_documento: '', patente_nautica: '', scadenza_patente_nautica: '' })
       setClienteEsistente(false)
+      setNazioneManuale(false)
     }
   }, [isOpen, prenotazione])
 
@@ -167,7 +190,7 @@ export default function BookingModal({
       setLoadingOptions(true)
       const [serviziRes, imbarcazioniRes, serviziAssociatiRes] = await Promise.all([
         supabase.from('servizi').select('id, nome, tipo').eq('attivo', true).order('nome'),
-        supabase.from('imbarcazioni').select('id, nome, tipo, categoria, fornitore_id').eq('attiva', true).order('nome'),
+       supabase.from('imbarcazioni').select('id, nome, tipo, categoria, fornitore_id, minimo_pax_collettivo').eq('attiva', true).order('nome'),
         supabase.from('vista_imbarcazioni_servizi_con_prezzi').select('imbarcazione_id, servizio_id, servizio_tipo, prezzo_finale')
       ])
       setServizi(serviziRes.data || [])
@@ -216,6 +239,7 @@ export default function BookingModal({
           scadenza_patente_nautica: c.scadenza_patente_nautica || ''
         })
         setClienteEsistente(true)
+        setNazioneManuale(!['IT','GB','US','FR','DE','ES','NL','CH'].includes(c.nazione || 'IT'))
         toast.success(`Cliente trovato: ${c.nome} ${c.cognome}`)
       }
     } catch (e) { console.error('Errore ricerca cliente:', e) }
@@ -284,10 +308,18 @@ export default function BookingModal({
     if (boatSource === 'locale' && !formData.imbarcazione_id) { toast.error('Seleziona un\'imbarcazione'); return }
     if (boatSource === 'ns3000' && !ns3000BoatId) { toast.error('Seleziona una barca NS3000'); return }
     if (!formData.data_servizio) { toast.error('Seleziona una data'); return }
-    if (!formData.metodo_pagamento) { toast.error('Seleziona un metodo di pagamento'); return }
+    if (boatSource === 'ns3000' && !clienteForm.email) { toast.error('Email cliente obbligatoria per prenotazioni NS3000'); return }
 
     const servizioSelezionato = servizi.find(s => s.id === formData.servizio_id)
     const tipoTour = servizioSelezionato?.tipo === 'tour_collettivo' ? 'collettivo' : 'privato'
+    // Validazione minimo pax collettivo
+    if (servizioSelezionato?.tipo === 'tour_collettivo' && boatSource === 'locale' && formData.imbarcazione_id) {
+      const barcaSel = imbarcazioni.find(i => i.id === formData.imbarcazione_id)
+      if (barcaSel?.minimo_pax_collettivo && formData.numero_persone < barcaSel.minimo_pax_collettivo) {
+        toast.error(`Minimo ${barcaSel.minimo_pax_collettivo} passeggeri per tour collettivo su ${barcaSel.nome}`)
+        return
+      }
+    }
 
     try {
       setSaving(true)
@@ -339,28 +371,50 @@ export default function BookingModal({
         }).eq('id', prenotazione.id)
         if (error) throw error
         toast.success('Prenotazione aggiornata!')
+        trackAction('prenotazioni', 'modifica', { id: prenotazione.id })
 
       } else if (boatSource === 'ns3000') {
         const selectedBoat = ns3000Boats.find(b => b.boat_id === ns3000BoatId)
+        // Risolvi BA-id dalla NS3000-id selezionata (se la barca è mappata)
+        const baImbarcazioneId = Object.entries(BA_TO_NS3000_MAP).find(([, ns]) => ns === ns3000BoatId)?.[0] || null
+
         const ns3000Payload = {
-          boat_id: ns3000BoatId, boat_name: selectedBoat?.name || '',
-          booking_date: formData.data_servizio, time_slot: ns3000TimeSlot,
-          customer_name: clienteForm.nome, customer_surname: clienteForm.cognome,
-          customer_email: clienteForm.email || '', customer_phone: clienteForm.telefono || '',
-          num_passengers: formData.numero_persone, price: formData.prezzo_totale,
-          notes: formData.note_interne || '', cliente_id: clienteId,
-          servizio_id: formData.servizio_id || null, ora_inizio: formData.ora_inizio || null,
-          metodo_pagamento: formData.metodo_pagamento || 'contanti', lingua: formData.lingua,
-          porto_imbarco: formData.porto_imbarco || null, ora_imbarco: formData.ora_imbarco || null,
+          boat_id: ns3000BoatId,
+          boat_name: selectedBoat?.name || '',
+          ba_imbarcazione_id: baImbarcazioneId,
+          booking_date: formData.data_servizio,
+          time_slot: ns3000TimeSlot,
+          customer_name: clienteForm.nome,
+          customer_surname: clienteForm.cognome,
+          customer_email: clienteForm.email || '',
+          customer_phone: clienteForm.telefono || '',
+          num_passengers: formData.numero_persone,
+          price: formData.prezzo_totale,
+          notes: formData.note_interne || '',
+          cliente_id: clienteId,
+          servizio_id: formData.servizio_id || null,
+          ora_inizio: formData.ora_inizio || null,
+          lingua: formData.lingua,
+          porto_imbarco: formData.porto_imbarco || null,
+          ora_imbarco: formData.ora_imbarco || null,
           booking_type: tipoTour,
+          // ← FIX: campi pagamento + stato
+          stato: formData.stato,
+          metodo_pagamento: formData.metodo_pagamento || 'contanti',
+          caparra_ricevuta: formData.caparra_ricevuta || 0,
+          saldo_ricevuto: formData.saldo_ricevuto || 0,
+          metodo_pagamento_caparra: formData.metodo_pagamento_caparra || null,
+          metodo_pagamento_saldo: formData.metodo_pagamento_saldo || null,
+          caparra_dovuta: (formData.prezzo_totale || 0) * 0.3,
         }
-        const res = await fetch('/api/ns3000/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ns3000Payload) })
+        const res = await fetch('/api/ns3000/bookings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(ns3000Payload)
+        })
         const result = await res.json()
         if (!res.ok) throw new Error(result.message || 'Errore NS3000')
-        if (result.local_booking?.id) {
-          await supabase.from('prenotazioni').update({ tipo_tour: tipoTour }).eq('id', result.local_booking.id)
-        }
         toast.success(`Prenotazione NS3000 creata! ${result.ns3000_booking?.booking_number || ''}`)
+        trackAction('prenotazioni', 'crea_ns3000', { booking_number: result.ns3000_booking?.booking_number })
         if (result.local_booking?.id) inviaNotifiche(result.local_booking.id, formData.lingua || 'it')
 
       } else {
@@ -381,13 +435,8 @@ export default function BookingModal({
         }])
         if (error) throw error
         toast.success('Prenotazione creata!')
-        import { trackAction } from '@/lib/useActivityTracker'
+        trackAction('prenotazioni', 'crea', { codice: formData.codice_prenotazione })
 
-// dopo creazione prenotazione
-trackAction('prenotazioni', 'crea', { codice: formData.codice_prenotazione })
-
-// dopo modifica
-trackAction('prenotazioni', 'modifica', { id: prenotazione.id })
         // Sync NS3000 se barca mappata
         const ns3000BoatIdMapped = BA_TO_NS3000_MAP[formData.imbarcazione_id]
         if (ns3000BoatIdMapped) {
@@ -397,29 +446,38 @@ trackAction('prenotazioni', 'modifica', { id: prenotazione.id })
               body: JSON.stringify({
                 boat_id: ns3000BoatIdMapped,
                 boat_name: imbarcazioni.find(b => b.id === formData.imbarcazione_id)?.nome || '',
-                booking_date: formData.data_servizio, time_slot: 'full_day',
-                customer_name: clienteForm.nome, customer_surname: clienteForm.cognome,
-                customer_email: clienteForm.email || '', customer_phone: clienteForm.telefono || '',
-                num_passengers: formData.numero_persone, price: formData.prezzo_totale,
-                final_price: formData.prezzo_totale, notes: formData.note_interne || null,
+                ba_imbarcazione_id: formData.imbarcazione_id,
+                booking_date: formData.data_servizio,
+                time_slot: 'full_day',
+                customer_name: clienteForm.nome,
+                customer_surname: clienteForm.cognome,
+                customer_email: clienteForm.email || '',
+                customer_phone: clienteForm.telefono || '',
+                num_passengers: formData.numero_persone,
+                price: formData.prezzo_totale,
+                final_price: formData.prezzo_totale,
+                notes: formData.note_interne || null,
                 external_ref: formData.codice_prenotazione,
                 service_type: tipoTour === 'collettivo' ? 'collective' : 'charter',
                 booking_type: tipoTour === 'collettivo' ? 'collective' : 'tour',
                 skip_local: true,
+                // Campi pagamento + stato anche nel sync
+                stato: formData.stato,
+                metodo_pagamento: formData.metodo_pagamento || 'contanti',
+                caparra_ricevuta: formData.caparra_ricevuta || 0,
+                saldo_ricevuto: formData.saldo_ricevuto || 0,
+                metodo_pagamento_caparra: formData.metodo_pagamento_caparra || null,
+                metodo_pagamento_saldo: formData.metodo_pagamento_saldo || null,
+                caparra_dovuta: (formData.prezzo_totale || 0) * 0.3,
               })
             })
             const syncResult = await syncRes.json()
-            if (syncRes.ok && syncResult.ns3000_booking?.booking_number) {
-              await supabase.from('prenotazioni').update({
-                ns3000_booking_id: syncResult.ns3000_booking.id,
-                ns3000_booking_number: syncResult.ns3000_booking.booking_number,
-              }).eq('codice_prenotazione', formData.codice_prenotazione)
-              toast.success(`Sincronizzato NS3000: ${syncResult.ns3000_booking.booking_number}`)
-            }
+            if (!syncRes.ok) console.warn('[BA→NS3000] Sync failed:', syncResult)
           } catch (syncErr) { console.warn('[BA→NS3000] Sync error:', syncErr) }
         }
 
-        const { data: nuova } = await supabase.from('prenotazioni').select('id').eq('codice_prenotazione', formData.codice_prenotazione).single()
+        const { data: nuova } = await supabase.from('prenotazioni')
+          .select('id').eq('codice_prenotazione', formData.codice_prenotazione).single()
         if (nuova?.id) inviaNotifiche(nuova.id, formData.lingua || 'it')
       }
 
@@ -487,18 +545,33 @@ trackAction('prenotazioni', 'modifica', { id: prenotazione.id })
                     </div>
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mt-2">
-                    <div>
-                      <select value={clienteForm.nazione} onChange={(e) => setClienteForm(prev => ({ ...prev, nazione: e.target.value }))}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm h-[34px]">
-                        <option value="IT">🇮🇹 Italia</option><option value="GB">🇬🇧 UK</option>
-                        <option value="US">🇺🇸 USA</option><option value="FR">🇫🇷 Francia</option>
-                        <option value="DE">🇩🇪 Germania</option><option value="ES">🇪🇸 Spagna</option>
-                        <option value="NL">🇳🇱 Olanda</option><option value="CH">🇨🇭 Svizzera</option>
-                        <option value="altro">Altro</option>
-                      </select>
+                   <div>
+                      {!nazioneManuale ? (
+                        <select value={clienteForm.nazione} onChange={(e) => {
+                          if (e.target.value === 'altro') { setNazioneManuale(true); setClienteForm(prev => ({ ...prev, nazione: '' })) }
+                          else setClienteForm(prev => ({ ...prev, nazione: e.target.value }))
+                        }}
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm h-[34px]">
+                          <option value="IT">🇮🇹 Italia</option><option value="GB">🇬🇧 UK</option>
+                          <option value="US">🇺🇸 USA</option><option value="FR">🇫🇷 Francia</option>
+                          <option value="DE">🇩🇪 Germania</option><option value="ES">🇪🇸 Spagna</option>
+                          <option value="NL">🇳🇱 Olanda</option><option value="CH">🇨🇭 Svizzera</option>
+                          <option value="altro">✏️ Altro...</option>
+                        </select>
+                      ) : (
+                        <div className="flex gap-1">
+                          <input type="text" value={clienteForm.nazione}
+                            onChange={(e) => setClienteForm(prev => ({ ...prev, nazione: e.target.value.toUpperCase() }))}
+                            placeholder="Es. BR, AU, JP..."
+                            className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm h-[34px]"
+                            maxLength={3} autoFocus />
+                          <button type="button" onClick={() => { setNazioneManuale(false); setClienteForm(prev => ({ ...prev, nazione: 'IT' })) }}
+                            className="px-2 py-1 text-xs text-gray-500 hover:text-blue-600 border border-gray-300 rounded h-[34px]" title="Torna alla lista">↩</button>
+                        </div>
+                      )}
                     </div>
                     <div>
-                      <select value={clienteForm.tipo_documento} onChange={(e) => setClienteForm(prev => ({ ...prev, tipo_documento: e.target.value }))}
+                      <select value={clienteForm.tipo_documento}onChange={(e) => setClienteForm(prev => ({ ...prev, tipo_documento: e.target.value }))}
                         className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm h-[34px]">
                         <option value="">Doc. ID</option>
                         <option value="carta_identita">🪪 CI</option>
@@ -579,6 +652,14 @@ trackAction('prenotazioni', 'modifica', { id: prenotazione.id })
                     <input type="number" min="1" value={formData.numero_persone}
                       onChange={(e) => setFormData({ ...formData, numero_persone: parseInt(e.target.value) || 1 })}
                       className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm h-[34px]" />
+                    {(() => {
+                      const srv = servizi.find(s => s.id === formData.servizio_id)
+                      const brc = imbarcazioni.find(i => i.id === formData.imbarcazione_id)
+                      if (srv?.tipo === 'tour_collettivo' && brc?.minimo_pax_collettivo && formData.numero_persone < brc.minimo_pax_collettivo) {
+                        return <p className="text-[10px] text-red-600 mt-0.5">⚠️ Min {brc.minimo_pax_collettivo} pax</p>
+                      }
+                      return null
+                    })()}
                   </div>
                 </div>
 

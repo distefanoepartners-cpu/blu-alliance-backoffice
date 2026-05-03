@@ -39,6 +39,7 @@ export default function MieBarchePage() {
     descrizione: '',
     caratteristiche: '',
     immagine_principale: '',
+    minimo_pax_collettivo: 0,
     attiva: true
   })
 
@@ -186,6 +187,7 @@ export default function MieBarchePage() {
       descrizione: imbarcazione.descrizione || '',
       caratteristiche: caratteristicheString,
       immagine_principale: imbarcazione.immagine_principale || '',
+      minimo_pax_collettivo: imbarcazione.minimo_pax_collettivo || 0,
       attiva: imbarcazione.attiva
     })
     setImageFile(null)
@@ -240,7 +242,8 @@ export default function MieBarchePage() {
         descrizione: formData.descrizione || null,
         caratteristiche: caratteristicheArray,
         immagine_principale: imageUrl || null,
-        fornitore_id: fornitoreId, // sempre il proprio fornitore
+        fornitore_id: fornitoreId,
+        minimo_pax_collettivo: formData.minimo_pax_collettivo || 0,
         attiva: formData.attiva
       }
 
@@ -276,7 +279,9 @@ export default function MieBarchePage() {
     setEditingId(null)
     setFormData({
       nome: '', tipo: 'gommone', categoria: 'simple', capacita_massima: 6,
-      descrizione: '', caratteristiche: '', immagine_principale: '', attiva: true
+      descrizione: '', caratteristiche: '', immagine_principale: '',
+      minimo_pax_collettivo: 0,
+      attiva: true
     })
     setImageFile(null)
     setImagePreview(null)
@@ -635,8 +640,8 @@ export default function MieBarchePage() {
                 </div>
               </div>
 
-              {/* Categoria + Capacità */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Categoria + Capacità + Min Pax Collettivo */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Categoria *</label>
                   <select value={formData.categoria} onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
@@ -651,6 +656,14 @@ export default function MieBarchePage() {
                   <input type="number" value={formData.capacita_massima}
                     onChange={(e) => setFormData({ ...formData, capacita_massima: parseInt(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" min="1" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Min Pax Collettivo</label>
+                  <input type="number" value={formData.minimo_pax_collettivo}
+                    onChange={(e) => setFormData({ ...formData, minimo_pax_collettivo: parseInt(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" min="0"
+                    placeholder="0 = nessun minimo" />
+                  <p className="text-xs text-gray-500 mt-1">Minimo passeggeri per tour collettivi</p>
                 </div>
               </div>
 

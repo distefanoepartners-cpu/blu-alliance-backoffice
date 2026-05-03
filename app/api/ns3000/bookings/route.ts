@@ -59,12 +59,20 @@ export async function POST(request: Request) {
     }
 
     // ⭐ Genera codice BA locale (usato come external_ref in NS3000)
-    const baBookingCode = body.external_ref || `BA${Date.now().toString(36).toUpperCase()}`
+    const baBookingCode =
+      body.external_ref ||
+      body.codice_prenotazione ||
+      `BA${Date.now().toString(36).toUpperCase()}`
+
+    // ⭐ Estrazione campi pagamento (BA naming → NS3000 naming)
+    const depositAmount = parseFloat(body.caparra_ricevuta) || 0
+    const balanceAmount = parseFloat(body.saldo_ricevuto) || 0
 
     // Payload verso NS3000
     const ns3000Payload = {
       // Barca e data
       boat_id: body.boat_id,
+      service_id: body.service_id || null,  // ⭐ FIX 2026-04-30: serve a NS3000 per check capienza collettivi
       booking_date: body.booking_date,
       booking_end_date: body.booking_end_date || body.booking_date,
       time_slot: body.time_slot || 'full_day',
@@ -84,6 +92,11 @@ export async function POST(request: Request) {
       price: finalPrice,
       base_price: finalPrice,
       final_price: finalPrice,
+
+      // ⭐ Pagamenti — tracciati anche lato NS3000 per saldi reciproci
+      deposit_amount: depositAmount,
+      balance_amount: balanceAmount,
+      caution_amount: parseFloat(body.caution_amount) || 0,
 
       // ⭐ Riferimento BA per tracciabilità
       // external_ref viene salvato in NS3000 e appare come "codice BA"
@@ -124,16 +137,22 @@ export async function POST(request: Request) {
     if (!body.skip_local && body.ba_imbarcazione_id) {
       const codice = baBookingCode.startsWith('BA') ? baBookingCode : `BA-${baBookingCode}`
 
-      // Cerca o crea cliente BA
+      // Cerca o crea cliente BA (fallback se cliente_id non passato)
       let clienteId: string | null = body.cliente_id || null
       if (!clienteId && body.customer_email) {
         const { data: cl } = await supabase
           .from('clienti')
           .select('id')
           .eq('email', body.customer_email)
-          .single()
+          .maybeSingle()
         if (cl) clienteId = cl.id
       }
+
+      // Caparra dovuta con fallback al 30%
+      const caparraDovuta =
+        typeof body.caparra_dovuta === 'number'
+          ? body.caparra_dovuta
+          : finalPrice * 0.3
 
       const { data: prenData, error: prenError } = await supabase
         .from('prenotazioni')
@@ -141,15 +160,23 @@ export async function POST(request: Request) {
           codice_prenotazione: codice,
           imbarcazione_id: body.ba_imbarcazione_id,
           cliente_id: clienteId,
+          servizio_id: body.servizio_id || null,
           data_servizio: body.booking_date,
+          ora_inizio: body.ora_inizio || null,
           numero_persone: body.num_passengers,
           prezzo_totale: finalPrice,
-          stato: 'confermata',
+          stato: body.stato || 'confermata',
           tipo_tour: body.booking_type === 'collective' ? 'collettivo' : 'privato',
           metodo_pagamento: body.metodo_pagamento || 'altro',
+          metodo_pagamento_caparra: body.metodo_pagamento_caparra || null,
+          metodo_pagamento_saldo: body.metodo_pagamento_saldo || null,
+          caparra_dovuta: caparraDovuta,
+          caparra_ricevuta: depositAmount,
+          saldo_ricevuto: balanceAmount,
           lingua: body.lingua || 'it',
           porto_imbarco: body.porto_imbarco || null,
           ora_imbarco: body.ora_imbarco || null,
+          note_cliente: body.note_cliente || null,
           note_interne: body.notes || null,
           source: 'blualliance',
           // Riferimento incrociato con NS3000

@@ -32,6 +32,7 @@ export default function ImbarcazioniPage() {
     caratteristiche: '',
     immagine_principale: '',
     fornitore_id: '',
+   minimo_pax_collettivo: 0,
     attiva: true
   })
 
@@ -170,6 +171,7 @@ export default function ImbarcazioniPage() {
       caratteristiche: '',
       immagine_principale: '',
       fornitore_id: '',
+      minimo_pax_collettivo: 0,
       attiva: true
     })
     setImageFile(null)
@@ -199,10 +201,11 @@ export default function ImbarcazioniPage() {
       caratteristiche: caratteristicheString,
       immagine_principale: imbarcazione.immagine_principale || '',
       fornitore_id: imbarcazione.fornitore_id || '',
+      minimo_pax_collettivo: imbarcazione.minimo_pax_collettivo || 0,
       attiva: imbarcazione.attiva
     })
     setImageFile(null)
-    setImagePreview(imbarcazione.immagine_principale || null)
+    setImagePreview(imbarcazione.immagine_principale || null) 
     setShowModal(true)
   }
 
@@ -284,6 +287,7 @@ export default function ImbarcazioniPage() {
         caratteristiche: caratteristicheArray,
         immagine_principale: imageUrl || null,
         fornitore_id: formData.fornitore_id || null,
+        minimo_pax_collettivo: formData.minimo_pax_collettivo || 0,
         attiva: formData.attiva
       }
 
@@ -706,8 +710,7 @@ export default function ImbarcazioniPage() {
                 )}
               </div>
 
-              {/* Info Base */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Info Base */}<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Nome *</label>
                   <input
@@ -719,7 +722,6 @@ export default function ImbarcazioniPage() {
                   />
                 </div>
 
-                {/* 🆕 FIX: "Barca" → "Natante" e aggiunto "Barca a Vela" */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Tipo</label>
                   <select
@@ -761,6 +763,19 @@ export default function ImbarcazioniPage() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Min Pax Collettivo</label>
+                  <input
+                    type="number"
+                    value={formData.minimo_pax_collettivo}
+                    onChange={(e) => setFormData({ ...formData, minimo_pax_collettivo: parseInt(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    min="0"
+                    placeholder="0 = nessun minimo"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Minimo passeggeri per tour collettivi</p>
+                </div>
+
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">Fornitore</label>
                   <select
@@ -775,7 +790,6 @@ export default function ImbarcazioniPage() {
                   </select>
                 </div>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Descrizione</label>
                 <textarea

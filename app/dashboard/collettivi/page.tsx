@@ -44,23 +44,19 @@ interface PrenotazioneCollettiva {
   servizi?: { nome: string }
 }
 
-// Servizio collettivo NS3000 associato a una barca
 interface Ns3000Service {
   service_id: string
   service_name: string
   price_per_person: number
 }
 
-// Barca NS3000 con tutti i suoi servizi collettivi
 interface Ns3000CollectiveBoat {
   boat_id: string
   boat_name: string
   capacity: number
-  // Servizio principale (per default nel modal)
   service_name: string
   service_id: string
   price_per_person: number
-  // Tutti i servizi disponibili per questa barca
   all_services: Ns3000Service[]
 }
 
@@ -78,9 +74,17 @@ interface Ns3000CellData {
 }
 
 interface CellInfoBA {
-  pax: number; capienza: number
+  pax: number; paxEsterni: number; capienza: number
   prenotazioni: PrenotazioneCollettiva[]
   bloccata_da_privato: boolean
+}
+
+interface PostoEsterno {
+  id: string
+  imbarcazione_id: string
+  data: string
+  posti_occupati: number
+  note: string | null
 }
 
 // ─────────────────────────────────────────────
@@ -93,6 +97,7 @@ export default function TourCollettivi() {
   const [prenotazioni, setPrenotazioni] = useState<PrenotazioneCollettiva[]>([])
   const [prenotazioniPrivate, setPrenotazioniPrivate] = useState<any[]>([])
   const [blocchi, setBlocchi] = useState<any[]>([])
+  const [postiEsterni, setPostiEsterni] = useState<PostoEsterno[]>([])
 
   const [ns3000Loading, setNs3000Loading] = useState(false)
   const [showNs3000, setShowNs3000] = useState(true)
@@ -114,6 +119,11 @@ export default function TourCollettivi() {
   const [showCellModal, setShowCellModal] = useState(false)
   const [cellModalData, setCellModalData] = useState<{ barca: Imbarcazione; date: Date; info: CellInfoBA } | null>(null)
 
+  // Posti esterni modal
+  const [showPostiEsterniModal, setShowPostiEsterniModal] = useState(false)
+  const [postiEsterniModalData, setPostiEsterniModalData] = useState<{ barca: Imbarcazione; date: Date; current: number; note: string }>({ barca: {} as Imbarcazione, date: new Date(), current: 0, note: '' })
+  const [savingPostiEsterni, setSavingPostiEsterni] = useState(false)
+
   const [showNewModal, setShowNewModal] = useState(false)
   const [newBookingSource, setNewBookingSource] = useState<'ba' | 'ns3000'>('ba')
   const [newBooking, setNewBooking] = useState({
@@ -125,7 +135,6 @@ export default function TourCollettivi() {
     telefono_cliente: '', servizio_id: '', stato: 'confermata',
     lingua: 'it', porto_imbarco: '', ora_imbarco: '',
   })
-  // Servizi disponibili per la barca NS3000 selezionata nel modal
   const [ns3000AvailableServices, setNs3000AvailableServices] = useState<Ns3000Service[]>([])
 
   const [servizi, setServizi] = useState<any[]>([])
@@ -153,7 +162,6 @@ export default function TourCollettivi() {
     loadNs3000Data()
   }, [currentMonthStart, authLoading, isOperatore, fornitoreId])
 
-  // Ricalcola prezzo quando cambiano pax o servizio NS3000
   useEffect(() => {
     if (newBookingSource === 'ns3000' && newBooking.ns3000_price_per_person > 0) {
       setNewBooking(prev => ({
@@ -163,7 +171,6 @@ export default function TourCollettivi() {
     }
   }, [newBooking.ns3000_price_per_person, newBooking.numero_persone, newBookingSource])
 
-  // Ricalcola prezzo BA
   useEffect(() => {
     if (newBookingSource !== 'ba') return
     if (!newBooking.imbarcazione_id || !newBooking.servizio_id) return
@@ -246,12 +253,18 @@ export default function TourCollettivi() {
         .gte('data_servizio', dateFrom).lte('data_servizio', dateTo)
         .eq('tipo_tour', 'privato').not('stato', 'in', '("cancellata","rifiutata")')
 
-      // ⭐ Carica anche i blocchi indisponibilità
       const { data: blocchiData } = await supabase
         .from('blocchi_imbarcazioni')
         .select('imbarcazione_id, data_inizio, data_fine')
         .lte('data_inizio', dateTo)
         .gte('data_fine', dateFrom)
+
+      // ⭐ Carica posti esterni
+      const { data: postiEsterniData } = await supabase
+        .from('posti_esterni')
+        .select('*')
+        .gte('data', dateFrom)
+        .lte('data', dateTo)
 
       const { data: serviziData } = await supabase
         .from('servizi').select('id, nome, tipo').eq('attivo', true).eq('tipo', 'tour_collettivo').order('nome')
@@ -263,6 +276,7 @@ export default function TourCollettivi() {
       setPrenotazioni((prenCollData as any) || [])
       setPrenotazioniPrivate(prenPrivData || [])
       setBlocchi(blocchiData || [])
+      setPostiEsterni(postiEsterniData || [])
       setServizi(serviziData || [])
       setClienti(clientiData || [])
     } catch (error) {
@@ -275,9 +289,6 @@ export default function TourCollettivi() {
 
   // ─────────────────────────────────────────────
   // LOAD NS3000 DATA
-  // Fonte unica: /api/ns3000/collective-tours
-  // Prima chiamata: singolo giorno → lista barche con TUTTI i servizi (anche senza pax)
-  // Seconda chiamata: range mese → celle con prenotazioni
   // ─────────────────────────────────────────────
   async function loadNs3000Data() {
     if (isOperatore) return
@@ -286,91 +297,56 @@ export default function TourCollettivi() {
       const dateFrom = format(currentMonthStart, 'yyyy-MM-dd')
       const dateTo = format(currentMonthEnd, 'yyyy-MM-dd')
 
-      // boat_id → { name, capacity, services[] }
-      type BoatInfo = {
-        name: string; capacity: number
-        services: Ns3000Service[]
-      }
+      type BoatInfo = { name: string; capacity: number; services: Ns3000Service[] }
       const boatInfoMap: Record<string, BoatInfo> = {}
       const cellMap: Record<string, Ns3000CellData> = {}
 
-      // 1. Singolo giorno → lista barche configurate per collettivi
-      //    include boats[] (disponibili) + excluded_boats[] (servizio ma non disponibili)
       try {
         const singleRes = await fetch(`/api/ns3000/collective-tours?date=${dateFrom}`)
         if (singleRes.ok) {
           const singleData: any[] = await singleRes.json()
           for (const tourDay of singleData) {
-            const svc: Ns3000Service = {
-              service_id: tourDay.service_id,
-              service_name: tourDay.service_name,
-              price_per_person: tourDay.price_per_person || 0,
-            }
+            const svc: Ns3000Service = { service_id: tourDay.service_id, service_name: tourDay.service_name, price_per_person: tourDay.price_per_person || 0 }
             for (const boat of [...(tourDay.boats || []), ...(tourDay.excluded_boats || [])]) {
               const boatId = boat.boat_id
               if (!boatId) continue
-              if (!boatInfoMap[boatId]) {
-                boatInfoMap[boatId] = { name: boat.boat_name, capacity: boat.capacity || 0, services: [] }
-              }
-              // Aggiungi servizio se non già presente
-              if (!boatInfoMap[boatId].services.find(s => s.service_id === svc.service_id)) {
-                boatInfoMap[boatId].services.push(svc)
-              }
+              if (!boatInfoMap[boatId]) boatInfoMap[boatId] = { name: boat.boat_name, capacity: boat.capacity || 0, services: [] }
+              if (!boatInfoMap[boatId].services.find(s => s.service_id === svc.service_id)) boatInfoMap[boatId].services.push(svc)
               if (boat.capacity) boatInfoMap[boatId].capacity = boat.capacity
             }
           }
         }
       } catch (e) { console.warn('NS3000 collective-tours (singolo giorno):', e) }
 
-      // 2. Range mese → celle con prenotazioni
       try {
         const res = await fetch(`/api/ns3000/collective-tours?start=${dateFrom}&end=${dateTo}`)
         if (res.ok) {
           const data: any[] = await res.json()
           for (const tourDay of data) {
-            const svc: Ns3000Service = {
-              service_id: tourDay.service_id,
-              service_name: tourDay.service_name,
-              price_per_person: tourDay.price_per_person || 0,
-            }
+            const svc: Ns3000Service = { service_id: tourDay.service_id, service_name: tourDay.service_name, price_per_person: tourDay.price_per_person || 0 }
             for (const boat of tourDay.boats || []) {
               const boatId = boat.boat_id
               if (!boatId) continue
-
-              // Aggiorna info barca se non già presente
-              if (!boatInfoMap[boatId]) {
-                boatInfoMap[boatId] = { name: boat.boat_name, capacity: boat.capacity || 0, services: [] }
-              }
-              if (!boatInfoMap[boatId].services.find(s => s.service_id === svc.service_id)) {
-                boatInfoMap[boatId].services.push(svc)
-              }
+              if (!boatInfoMap[boatId]) boatInfoMap[boatId] = { name: boat.boat_name, capacity: boat.capacity || 0, services: [] }
+              if (!boatInfoMap[boatId].services.find(s => s.service_id === svc.service_id)) boatInfoMap[boatId].services.push(svc)
               if (boat.capacity) boatInfoMap[boatId].capacity = boat.capacity
 
-              // Costruisci mappa celle
               const key = `${boatId}|${tourDay.date}`
               const existing = cellMap[key]
               const newBooked = (existing?.passengers_booked || 0) + (boat.passengers_booked || 0)
               const capacity = boat.capacity || boatInfoMap[boatId].capacity || 0
-
               cellMap[key] = {
                 passengers_booked: newBooked,
-                // ⭐ Ricalcola sempre da capacity - booked, non fidarsi del valore API
                 passengers_available: Math.max(0, capacity - newBooked),
                 capacity,
                 occupancy_percent: capacity > 0 ? Math.round((newBooked / capacity) * 100) : 0,
-                // ⭐ Usa il servizio del tourDay corrente (quello con le prenotazioni)
                 service_name: tourDay.service_name,
                 bookings: [
                   ...(existing?.bookings || []),
                   ...(boat.bookings || []).map((b: any) => ({
-                    id: b.id,
-                    booking_number: b.booking_number,
-                    num_passengers: b.num_passengers,
-                    customer_name: b.customer_name,
-                    customer_phone: b.customer_phone || '',
-                    final_price: b.final_price,
-                    status: b.status,
-                    status_name: b.status_name,
+                    id: b.id, booking_number: b.booking_number, num_passengers: b.num_passengers,
+                    customer_name: b.customer_name, customer_phone: b.customer_phone || '',
+                    final_price: b.final_price, status: b.status, status_name: b.status_name,
                   }))
                 ]
               }
@@ -379,28 +355,19 @@ export default function TourCollettivi() {
         }
       } catch (e) { console.warn('NS3000 collective-tours (mese):', e) }
 
-      // 3. Costruisci lista barche
       const boats: Ns3000CollectiveBoat[] = Object.entries(boatInfoMap)
         .filter(([, v]) => v.name && v.services.length > 0)
         .map(([boat_id, v]) => ({
-          boat_id,
-          boat_name: v.name,
-          capacity: v.capacity,
-          // Primo servizio come default
-          service_id: v.services[0].service_id,
-          service_name: v.services[0].service_name,
-          price_per_person: v.services[0].price_per_person,
-          all_services: v.services,
+          boat_id, boat_name: v.name, capacity: v.capacity,
+          service_id: v.services[0].service_id, service_name: v.services[0].service_name,
+          price_per_person: v.services[0].price_per_person, all_services: v.services,
         }))
         .sort((a, b) => a.boat_name.localeCompare(b.boat_name))
 
       setNs3000CollectiveBoats(boats)
       setNs3000CellMap(cellMap)
-    } catch (e) {
-      console.warn('Errore NS3000:', e)
-    } finally {
-      setNs3000Loading(false)
-    }
+    } catch (e) { console.warn('Errore NS3000:', e) }
+    finally { setNs3000Loading(false) }
   }
 
   // ─────────────────────────────────────────────
@@ -410,15 +377,23 @@ export default function TourCollettivi() {
     const dateStr = format(date, 'yyyy-MM-dd')
     const capienza = barca.capacita_collettiva_override ?? barca.capacita_massima
     const prenCell = prenotazioni.filter(p => p.imbarcazione_id === barca.id && p.data_servizio === dateStr)
-    const pax = prenCell.reduce((sum, p) => sum + p.numero_persone, 0)
+    const paxPrenotati = prenCell.reduce((sum, p) => sum + p.numero_persone, 0)
+
+    // ⭐ Posti esterni (dall'armatore)
+    const pe = postiEsterni.find(p => p.imbarcazione_id === barca.id && p.data === dateStr)
+    const paxEsterni = pe?.posti_occupati || 0
+
     const bloccata = prenotazioniPrivate.some(p => p.imbarcazione_id === barca.id && p.data_servizio === dateStr)
-    // ⭐ Controlla anche i blocchi indisponibilità
     const bloccataDaBlocco = blocchi.some(b =>
-      b.imbarcazione_id === barca.id &&
-      b.data_inizio <= dateStr &&
-      b.data_fine >= dateStr
+      b.imbarcazione_id === barca.id && b.data_inizio <= dateStr && b.data_fine >= dateStr
     )
-    return { pax, capienza, prenotazioni: prenCell, bloccata_da_privato: bloccata || bloccataDaBlocco }
+    return {
+      pax: paxPrenotati + paxEsterni,
+      paxEsterni,
+      capienza,
+      prenotazioni: prenCell,
+      bloccata_da_privato: bloccata || bloccataDaBlocco
+    }
   }
 
   function getCellColorBA(info: CellInfoBA): string {
@@ -439,6 +414,54 @@ export default function TourCollettivi() {
   function selectCustomer(cliente: any) {
     setSelectedClienteId(cliente.id); setSelectedClienteData(cliente)
     setCustomerSearch(`${cliente.nome} ${cliente.cognome}`); setShowCustomerDropdown(false)
+  }
+
+  // ─────────────────────────────────────────────
+  // POSTI ESTERNI
+  // ─────────────────────────────────────────────
+  function openPostiEsterniModal(barca: Imbarcazione, date: Date) {
+    const dateStr = format(date, 'yyyy-MM-dd')
+    const pe = postiEsterni.find(p => p.imbarcazione_id === barca.id && p.data === dateStr)
+    setPostiEsterniModalData({
+      barca,
+      date,
+      current: pe?.posti_occupati || 0,
+      note: pe?.note || ''
+    })
+    setShowPostiEsterniModal(true)
+  }
+
+  async function savePostiEsterni() {
+    const { barca, date, current, note } = postiEsterniModalData
+    const dateStr = format(date, 'yyyy-MM-dd')
+    try {
+      setSavingPostiEsterni(true)
+
+      if (current <= 0) {
+        // Rimuovi se 0
+        await supabase.from('posti_esterni').delete()
+          .eq('imbarcazione_id', barca.id).eq('data', dateStr)
+        toast.success('Posti esterni rimossi')
+      } else {
+        // Upsert
+        const { error } = await supabase.from('posti_esterni').upsert({
+          imbarcazione_id: barca.id,
+          data: dateStr,
+          posti_occupati: current,
+          note: note || null,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'imbarcazione_id,data' })
+        if (error) throw error
+        toast.success(`${current} posti esterni salvati`)
+      }
+      setShowPostiEsterniModal(false)
+      loadData()
+    } catch (error: any) {
+      console.error('Errore posti esterni:', error)
+      toast.error('Errore nel salvataggio')
+    } finally {
+      setSavingPostiEsterni(false)
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -492,7 +515,6 @@ export default function TourCollettivi() {
 
   function openNewBookingNs3000(boat: Ns3000CollectiveBoat, date: Date) {
     setNewBookingSource('ns3000')
-    // Usa il primo servizio come default — utente può cambiare nel dropdown
     const defaultService = boat.all_services[0] || { service_id: boat.service_id, service_name: boat.service_name, price_per_person: boat.price_per_person }
     setNewBooking({
       imbarcazione_id: '', ns3000_boat_id: boat.boat_id, ns3000_boat_name: boat.boat_name,
@@ -511,14 +533,12 @@ export default function TourCollettivi() {
     setShowNewModal(true)
   }
 
-  // Quando l'utente cambia il servizio NS3000 nel modal
   function handleNs3000ServiceChange(serviceId: string) {
     const svc = ns3000AvailableServices.find(s => s.service_id === serviceId)
     if (!svc) return
     setNewBooking(prev => ({
       ...prev,
-      ns3000_service_id: svc.service_id,
-      ns3000_service_name: svc.service_name,
+      ns3000_service_id: svc.service_id, ns3000_service_name: svc.service_name,
       ns3000_price_per_person: svc.price_per_person,
       prezzo_totale: svc.price_per_person * (prev.numero_persone || 1),
     }))
@@ -554,24 +574,15 @@ export default function TourCollettivi() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            boat_id: newBooking.ns3000_boat_id,
-            boat_name: newBooking.ns3000_boat_name,
-            service_id: newBooking.ns3000_service_id,
-            service_name: newBooking.ns3000_service_name,
-            booking_date: newBooking.data_servizio,
-            time_slot: 'full_day',
-            customer_name: clienteNome,
-            customer_surname: clienteCognome,
-            customer_email: clienteEmail,
-            customer_phone: clienteTelefono,
-            num_passengers: newBooking.numero_persone,
-            price: newBooking.prezzo_totale,
-            notes: newBooking.note || null,
-            cliente_id: clienteId,
-            metodo_pagamento: newBooking.metodo_pagamento,
-            lingua: newBooking.lingua,
-            porto_imbarco: newBooking.porto_imbarco || null,
-            ora_imbarco: newBooking.ora_imbarco || null,
+            boat_id: newBooking.ns3000_boat_id, boat_name: newBooking.ns3000_boat_name,
+            service_id: newBooking.ns3000_service_id, service_name: newBooking.ns3000_service_name,
+            booking_date: newBooking.data_servizio, time_slot: 'full_day',
+            customer_name: clienteNome, customer_surname: clienteCognome,
+            customer_email: clienteEmail, customer_phone: clienteTelefono,
+            num_passengers: newBooking.numero_persone, price: newBooking.prezzo_totale,
+            notes: newBooking.note || null, cliente_id: clienteId,
+            metodo_pagamento: newBooking.metodo_pagamento, lingua: newBooking.lingua,
+            porto_imbarco: newBooking.porto_imbarco || null, ora_imbarco: newBooking.ora_imbarco || null,
             booking_type: 'collective',
           })
         })
@@ -615,6 +626,7 @@ export default function TourCollettivi() {
   // STATS
   // ─────────────────────────────────────────────
   const totalPaxBA = prenotazioni.reduce((sum, p) => sum + p.numero_persone, 0)
+  const totalPaxEsterni = postiEsterni.reduce((sum, p) => sum + p.posti_occupati, 0)
   const totalPaxNs3000 = Object.values(ns3000CellMap).reduce((sum, v) => sum + v.passengers_booked, 0)
   const giornateOccupate = new Set(prenotazioni.map(p => `${p.imbarcazione_id}-${p.data_servizio}`)).size
 
@@ -676,8 +688,10 @@ export default function TourCollettivi() {
           <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-orange-500 rounded-full"></div><span>Quasi piena</span></div>
           <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-red-500 rounded-full"></div><span>Piena</span></div>
           <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-purple-500 rounded-full"></div><span>Bloccata</span></div>
+          <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-gray-400 rounded-full border border-dashed border-gray-500"></div><span>Posti Esterni</span></div>
           <div className="ml-auto flex items-center gap-3 text-xs text-gray-500 flex-wrap">
             <span>🔵 <strong className="text-gray-900">{totalPaxBA}</strong> pax BA</span>
+            {totalPaxEsterni > 0 && <span>📋 <strong className="text-gray-700">{totalPaxEsterni}</strong> esterni</span>}
             {!isOperatore && totalPaxNs3000 > 0 && <span>⛵ <strong className="text-indigo-700">{totalPaxNs3000}</strong> pax NS3000</span>}
             <span>📅 <strong className="text-blue-600">{giornateOccupate}</strong> giornate</span>
           </div>
@@ -738,24 +752,27 @@ export default function TourCollettivi() {
                     const info = getCellInfoBA(barca, day)
                     const isToday = isSameDay(day, new Date())
                     const cellColor = getCellColorBA(info)
-                    const pct = Math.round((info.pax / info.capienza) * 100)
+                    const pct = info.capienza > 0 ? Math.round((info.pax / info.capienza) * 100) : 0
+                    const disponibili = Math.max(0, info.capienza - info.pax)
                     return (
                       <td key={`ba-${barca.id}-${day.toISOString()}`} className="border border-gray-100 p-0" style={{ width: '36px', minWidth: '36px' }}>
                         <button
                           onClick={() => {
                             if (info.bloccata_da_privato) { toast.error(`${barca.nome} impegnata con tour privato il ${format(day, 'd MMM', { locale: it })}`); return }
-                            if (info.prenotazioni.length > 0) { setCellModalData({ barca, date: day, info }); setShowCellModal(true) }
+                            if (info.prenotazioni.length > 0 || info.paxEsterni > 0) { setCellModalData({ barca, date: day, info }); setShowCellModal(true) }
+                            else if (isOperatore) { openPostiEsterniModal(barca, day) }
                             else openNewBookingBA(barca, day)
                           }}
                           className={`w-full flex flex-col items-center justify-center border-l-2 transition-all ${cellColor} ${isToday ? 'ring-1 ring-inset ring-blue-300' : ''}`}
                           style={{ height: '48px' }}
-                          title={info.bloccata_da_privato ? 'Bloccata' : `${info.pax}/${info.capienza} pax`}
+                          title={info.bloccata_da_privato ? 'Bloccata' : `${info.pax}/${info.capienza} pax (${info.paxEsterni > 0 ? `${info.paxEsterni} est.` : ''}${disponibili > 0 ? ` ${disponibili} liberi` : ' piena'})`}
                         >
                           {info.bloccata_da_privato ? <span className="text-[10px] text-purple-600">🔒</span>
                             : info.pax > 0 ? (
                               <>
                                 <span className="text-[10px] font-bold text-gray-700 leading-none">{info.pax}/{info.capienza}</span>
-                                <div className="w-6 bg-gray-200 rounded-full h-0.5 mt-1">
+                                {info.paxEsterni > 0 && <span className="text-[8px] text-gray-400 leading-none">+{info.paxEsterni}ext</span>}
+                                <div className="w-6 bg-gray-200 rounded-full h-0.5 mt-0.5">
                                   <div className={`h-0.5 rounded-full ${pct >= 100 ? 'bg-red-500' : pct >= 75 ? 'bg-orange-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(pct, 100)}%` }}></div>
                                 </div>
                               </>
@@ -806,7 +823,6 @@ export default function TourCollettivi() {
                               <div className="text-xs font-semibold text-indigo-900 truncate" title={boat.boat_name}>{boat.boat_name}</div>
                               <div className="text-[10px] text-indigo-500">
                                 {boat.capacity > 0 ? `${boat.capacity} pax` : ''}
-                                {/* Mostra tutti i servizi disponibili */}
                                 {boat.all_services.length > 0 && (
                                   <span className="ml-1 text-indigo-400">
                                     · {boat.all_services.map(s => `€${s.price_per_person}`).filter((v, i, a) => a.indexOf(v) === i).join('/')}
@@ -831,11 +847,8 @@ export default function TourCollettivi() {
                                   <button
                                     onClick={() => {
                                       if (cell && cell.passengers_booked > 0) {
-                                        setNs3000CellModalData({ boat, date: dateStr, cell })
-                                        setShowNs3000CellModal(true)
-                                      } else {
-                                        openNewBookingNs3000(boat, day)
-                                      }
+                                        setNs3000CellModalData({ boat, date: dateStr, cell }); setShowNs3000CellModal(true)
+                                      } else { openNewBookingNs3000(boat, day) }
                                     }}
                                     className={`w-full flex flex-col items-center justify-center border-l-2 transition-all ${cellColor} ${isToday ? 'ring-1 ring-inset ring-blue-300' : ''}`}
                                     style={{ height: '48px' }}
@@ -870,8 +883,50 @@ export default function TourCollettivi() {
       </div>
 
       <div className="mt-2 text-xs text-gray-400 text-center">
-        💡 BA: cella vuota → nuova prenotazione · cella occupata → dettagli{!isOperatore && ' · ⚙️ → capienza'} · NS3000: cella vuota → nuova prenotazione con sync
+        💡 {isOperatore ? 'Cella vuota → inserisci posti esterni · Cella occupata → dettagli' : 'BA: cella vuota → nuova prenotazione · cella occupata → dettagli · ⚙️ → capienza'} · NS3000: cella vuota → nuova prenotazione con sync
       </div>
+
+      {/* MODAL POSTI ESTERNI */}
+      {showPostiEsterniModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">📋 Posti Occupati Esternamente</h2>
+              <button onClick={() => setShowPostiEsterniModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+            </div>
+            <div className="mb-4 bg-gray-50 rounded-lg p-3">
+              <p className="text-sm font-semibold text-gray-900">🚤 {postiEsterniModalData.barca.nome}</p>
+              <p className="text-sm text-gray-600">📅 {format(postiEsterniModalData.date, 'EEEE dd MMMM yyyy', { locale: it })}</p>
+              <p className="text-xs text-gray-500 mt-1">Capienza: {postiEsterniModalData.barca.capacita_collettiva_override ?? postiEsterniModalData.barca.capacita_massima} pax</p>
+            </div>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Posti già occupati (da armatore/esterni)</label>
+                <input type="number" min={0}
+                  max={postiEsterniModalData.barca.capacita_collettiva_override ?? postiEsterniModalData.barca.capacita_massima}
+                  value={postiEsterniModalData.current}
+                  onChange={(e) => setPostiEsterniModalData(prev => ({ ...prev, current: parseInt(e.target.value) || 0 }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 text-center text-lg font-bold" />
+                <p className="text-xs text-gray-500 mt-1">Inserisci 0 per rimuovere</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Note (opzionale)</label>
+                <input type="text" value={postiEsterniModalData.note}
+                  onChange={(e) => setPostiEsterniModalData(prev => ({ ...prev, note: e.target.value }))}
+                  placeholder="Es. Prenotazione diretta armatore"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowPostiEsterniModal(false)} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">Annulla</button>
+              <button onClick={savePostiEsterni} disabled={savingPostiEsterni}
+                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50">
+                {savingPostiEsterni ? 'Salvataggio...' : '💾 Salva'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL IMPOSTAZIONI BA */}
       {showSettingsModal && selectedBarca && !isOperatore && (
@@ -928,27 +983,65 @@ export default function TourCollettivi() {
                 </div>
                 <span className="text-sm font-bold text-gray-900 whitespace-nowrap">{cellModalData.info.pax}/{cellModalData.info.capienza} pax</span>
               </div>
+              {/* ⭐ Dettaglio breakdown posti */}
+              {cellModalData.info.paxEsterni > 0 && (
+                <div className="mt-2 flex items-center gap-3 text-xs">
+                  <span className="text-blue-600">🔵 {cellModalData.info.pax - cellModalData.info.paxEsterni} prenotati BA</span>
+                  <span className="text-gray-500">📋 {cellModalData.info.paxEsterni} posti esterni</span>
+                </div>
+              )}
             </div>
-            <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
-              {cellModalData.info.prenotazioni.map((p) => (
-                <div key={p.id} className="border border-gray-200 rounded-lg p-3 flex items-center justify-between">
+
+            {/* Prenotazioni BA */}
+            {cellModalData.info.prenotazioni.length > 0 && (
+              <div className="space-y-2 max-h-48 overflow-y-auto mb-4">
+                {cellModalData.info.prenotazioni.map((p) => (
+                  <div key={p.id} className="border border-gray-200 rounded-lg p-3 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-blue-700">{p.codice_prenotazione}</div>
+                      <div className="text-sm text-gray-900">{p.clienti?.nome} {p.clienti?.cognome}</div>
+                      <div className="text-xs text-gray-500">{p.servizi?.nome}</div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-lg font-bold text-gray-900">{p.numero_persone}</span>
+                      <div className="text-xs text-gray-500">pax</div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${p.stato === 'confermata' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{p.stato}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ⭐ Posti esterni nel dettaglio */}
+            {cellModalData.info.paxEsterni > 0 && (
+              <div className="border border-dashed border-gray-300 rounded-lg p-3 mb-4 bg-gray-50">
+                <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-xs font-bold text-blue-700">{p.codice_prenotazione}</div>
-                    <div className="text-sm text-gray-900">{p.clienti?.nome} {p.clienti?.cognome}</div>
-                    <div className="text-xs text-gray-500">{p.servizi?.nome}</div>
+                    <div className="text-xs font-bold text-gray-600">📋 Posti Esterni (armatore)</div>
+                    {(() => {
+                      const pe = postiEsterni.find(p => p.imbarcazione_id === cellModalData.barca.id && p.data === format(cellModalData.date, 'yyyy-MM-dd'))
+                      return pe?.note ? <div className="text-xs text-gray-400 mt-0.5">{pe.note}</div> : null
+                    })()}
                   </div>
                   <div className="text-right">
-                    <span className="text-lg font-bold text-gray-900">{p.numero_persone}</span>
+                    <span className="text-lg font-bold text-gray-700">{cellModalData.info.paxEsterni}</span>
                     <div className="text-xs text-gray-500">pax</div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${p.stato === 'confermata' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{p.stato}</span>
                   </div>
                 </div>
-              ))}
-            </div>
-            {cellModalData.info.pax < cellModalData.info.capienza && (
+              </div>
+            )}
+
+            {/* Bottone modifica posti esterni */}
+            <button
+              onClick={() => { setShowCellModal(false); openPostiEsterniModal(cellModalData.barca, cellModalData.date) }}
+              className="w-full mb-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium border border-gray-200">
+              📋 {cellModalData.info.paxEsterni > 0 ? 'Modifica posti esterni' : 'Aggiungi posti esterni'}
+            </button>
+
+            {cellModalData.info.pax < cellModalData.info.capienza && !isOperatore && (
               <button onClick={() => { setShowCellModal(false); openNewBookingBA(cellModalData.barca, cellModalData.date) }}
                 className="w-full mt-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
-                + Aggiungi ({cellModalData.info.capienza - cellModalData.info.pax} posti liberi)
+                + Nuova prenotazione ({cellModalData.info.capienza - cellModalData.info.pax} posti liberi)
               </button>
             )}
             {cellModalData.info.pax >= cellModalData.info.capienza && (
@@ -1061,7 +1154,6 @@ export default function TourCollettivi() {
                 </div>
               </div>
 
-              {/* ⭐ Selettore servizio: BA → dropdown servizi BA, NS3000 → dropdown servizi NS3000 della barca */}
               {newBookingSource === 'ba' ? (
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Servizio/Tour</label>

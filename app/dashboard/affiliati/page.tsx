@@ -478,7 +478,22 @@ export default function AffiliatiPage() {
                                   </button>
                                 </div>
                               </div>
-
+                            {/* QR Code */}
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">QR Code (scansiona per prenotare)</p>
+                                <div className="flex items-center gap-3">
+                                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`https://blualliancegroup.com/?ref=${affiliato.codice}`)}`}
+                                    alt={`QR ${affiliato.codice}`} className="w-[120px] h-[120px] rounded-lg border border-gray-200" />
+                                  <div className="space-y-2">
+                                    <a href={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&format=png&data=${encodeURIComponent(`https://blualliancegroup.com/?ref=${affiliato.codice}`)}`}
+                                      download={`QR_${affiliato.codice}.png`} target="_blank" rel="noreferrer"
+                                      className="block px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-medium text-center">⬇️ Scarica PNG</a>
+                                    <a href={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&format=svg&data=${encodeURIComponent(`https://blualliancegroup.com/?ref=${affiliato.codice}`)}`}
+                                      download={`QR_${affiliato.codice}.svg`} target="_blank" rel="noreferrer"
+                                      className="block px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg text-xs font-medium text-center">⬇️ Scarica SVG</a>
+                                  </div>
+                                </div>
+                              </div>
                               {/* Commissione */}
                               <div className="bg-blue-50 rounded-lg p-3">
                                 <div className="flex items-center justify-between">

@@ -12,24 +12,24 @@ import { trackAction } from '@/lib/useActivityTracker'
 const NS3000_FORNITORE_ID = '2d78fca2-f474-4c44-8443-44c75924d5c3'
 
 const ns3000ToBaMap: Record<string, string> = {
-  '4a222a73-304b-4945-813b-9548ba201675': 'b743d220-6200-49de-9324-68297e4eee75', // 01 - Salpa Soleil 20
-  'd03cfe13-bcb6-4f98-bda4-a18b8bf7957d': '64e06e82-ed6e-4f23-b06e-14533a0187c6', // 02 - Salpa Soleil 20
-  '00ce8828-ebf9-4aad-8ad8-8f6b4e90a1e3': '7e854592-bb5d-4971-98aa-ae66c2fa66ba', // 03 - Salpa Soleil 20
-  '2edce19e-3687-42b9-bb87-57e2aabfccd2': 'b2a20895-eeab-493d-a2fb-53ef5ba1d220', // 04 - Salpa Soleil 20
-  '937298ab-2a15-4ace-adb2-b63dd1b865b1': '4c4f4b54-4ee6-481f-94f9-a142b5d651b0', // 05 - Cayman 585
-  '6800721d-a8e9-4217-b7a2-8548359c6cfc': '9a6cc58f-bb70-440e-92a1-d2e2c2712e5b', // 06 - Cayman 585
-  '52a7e9d0-444e-4801-a095-afcbba7ceed5': 'b2c15f7e-ffb2-4afa-bf19-d53f8d26902b', // 07 - Predator 599
-  '180dd752-b2b4-4318-beed-8bc15b3877c2': '557ecf08-2e88-4914-a1d9-da5ec5bf5845', // 08 - Predator 599
-  '8c1b5b3d-d4a2-441c-8f8e-71b88ff6c966': '07673392-e08c-4d53-a128-e9d6c405917d', // 09 - Predator 599
-  '42d4c904-f2e1-4436-931b-3e7b651bd7a6': '2f4f1a71-5037-4fb0-bbd1-ef6c6acf8dc5', // 10 - Cayman 585
-  'c35aefd0-6721-4f01-aeec-2d47bdf9f24f': '2d4995ec-35b3-4358-ace1-54621a9528ed', // 11 - Cab Dorado 10
-  'fe759df8-5d8e-401f-8fb2-dfaa3642c33c': '51231c4f-b929-466c-aed3-9440639e0bd7', // 12 - Manò 24 Sport
-  'd5bff230-0e6a-4211-b0ce-342e8fbace51': '8d4d1bd6-142f-4d0f-8854-333742eeeba3', // 13 - Clubman 26
-  '636cb5d4-1316-4382-90db-fa6c16deb1f4': '31d0ac07-57a9-472d-b07a-f9a26b2ba89e', // 14 - Yamaha 1800
-  '1365d4d3-0ffb-48a8-a8a6-d3c49dd22145': 'a079598f-b25d-49d6-90ce-b25146687a31', // 15 - Manò 25 Sport
-  '7b039929-1af2-46ab-9a91-f051497161e7': 'c8638c23-cd35-4c11-8333-4316f1ca4726', // 16 - All Rib 630
-  '02ffd51e-da3f-45fa-b2a5-92acc254e2a6': 'd8262b01-07d0-4795-ba31-e64c6eaf6f0f', // 18 - Italyure 37 Salerno
-  '3b967967-d7de-48bb-9f03-5e779aa15a27': '43d0b751-da8d-4181-aabc-ba3b217142bc', // 19 - Italyure 37 Masuccio
+  '4a222a73-304b-4945-813b-9548ba201675': 'b743d220-6200-49de-9324-68297e4eee75',
+  'd03cfe13-bcb6-4f98-bda4-a18b8bf7957d': '64e06e82-ed6e-4f23-b06e-14533a0187c6',
+  '00ce8828-ebf9-4aad-8ad8-8f6b4e90a1e3': '7e854592-bb5d-4971-98aa-ae66c2fa66ba',
+  '2edce19e-3687-42b9-bb87-57e2aabfccd2': 'b2a20895-eeab-493d-a2fb-53ef5ba1d220',
+  '937298ab-2a15-4ace-adb2-b63dd1b865b1': '4c4f4b54-4ee6-481f-94f9-a142b5d651b0',
+  '6800721d-a8e9-4217-b7a2-8548359c6cfc': '9a6cc58f-bb70-440e-92a1-d2e2c2712e5b',
+  '52a7e9d0-444e-4801-a095-afcbba7ceed5': 'b2c15f7e-ffb2-4afa-bf19-d53f8d26902b',
+  '180dd752-b2b4-4318-beed-8bc15b3877c2': '557ecf08-2e88-4914-a1d9-da5ec5bf5845',
+  '8c1b5b3d-d4a2-441c-8f8e-71b88ff6c966': '07673392-e08c-4d53-a128-e9d6c405917d',
+  '42d4c904-f2e1-4436-931b-3e7b651bd7a6': '2f4f1a71-5037-4fb0-bbd1-ef6c6acf8dc5',
+  'c35aefd0-6721-4f01-aeec-2d47bdf9f24f': '2d4995ec-35b3-4358-ace1-54621a9528ed',
+  'fe759df8-5d8e-401f-8fb2-dfaa3642c33c': '51231c4f-b929-466c-aed3-9440639e0bd7',
+  'd5bff230-0e6a-4211-b0ce-342e8fbace51': '8d4d1bd6-142f-4d0f-8854-333742eeeba3',
+  '636cb5d4-1316-4382-90db-fa6c16deb1f4': '31d0ac07-57a9-472d-b07a-f9a26b2ba89e',
+  '1365d4d3-0ffb-48a8-a8a6-d3c49dd22145': 'a079598f-b25d-49d6-90ce-b25146687a31',
+  '7b039929-1af2-46ab-9a91-f051497161e7': 'c8638c23-cd35-4c11-8333-4316f1ca4726',
+  '02ffd51e-da3f-45fa-b2a5-92acc254e2a6': 'd8262b01-07d0-4795-ba31-e64c6eaf6f0f',
+  '3b967967-d7de-48bb-9f03-5e779aa15a27': '43d0b751-da8d-4181-aabc-ba3b217142bc',
 }
 const baToNs3000Map: Record<string, string> = Object.fromEntries(
   Object.entries(ns3000ToBaMap).map(([k, v]) => [v, k])
@@ -65,11 +65,13 @@ export default function PlanningMensile() {
   const [prezziMap, setPrezziMap] = useState<Record<string, number>>({})
   const [prenotazioni, setPrenotazioni] = useState<any[]>([])
   const [blocchi, setBlocchi] = useState<any[]>([])
+  const [postiEsterni, setPostiEsterni] = useState<any[]>([])
   const [currentMonthStart, setCurrentMonthStart] = useState(startOfMonth(new Date()))
   const [loading, setLoading] = useState(true)
   const [filtroTour, setFiltroTour] = useState<string>('tutti')
   const [filtroTipo, setFiltroTipo] = useState<string>('tutti')
   const [filtroPax, setFiltroPax] = useState<number>(0)
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
   // NS3000
   const [ns3000Availability, setNs3000Availability] = useState<Record<string, any>>({})
   const [ns3000Bookings, setNs3000Bookings] = useState<any[]>([])
@@ -118,6 +120,19 @@ export default function PlanningMensile() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [contextMenu])
 
+  // Auto-scroll al giorno corrente
+  useEffect(() => {
+    if (loading) return
+    setTimeout(() => {
+      const todayCell = document.querySelector('th.bg-blue-100') as HTMLElement
+      const scrollContainer = todayCell?.closest('.overflow-x-auto') as HTMLElement
+      if (todayCell && scrollContainer) {
+        const cellLeft = todayCell.offsetLeft
+        scrollContainer.scrollLeft = cellLeft - colSizes.barca - 20
+      }
+    }, 150)
+  }, [loading, currentMonthStart])
+
   async function loadData() {
     try {
       setLoading(true)
@@ -134,7 +149,7 @@ export default function PlanningMensile() {
       setImbarcazioni(barcheData || [])
 
       const { data: prenotazioniData } = await supabase.from('prenotazioni')
-        .select('id, imbarcazione_id, data_servizio, stato, numero_persone, codice_prenotazione')
+        .select('id, imbarcazione_id, data_servizio, stato, numero_persone, codice_prenotazione, tipo_tour')
         .gte('data_servizio', dateFrom).lte('data_servizio', dateTo)
         .in('stato', ['confermata', 'in_attesa', 'completata'])
       setPrenotazioni(prenotazioniData || [])
@@ -143,6 +158,14 @@ export default function PlanningMensile() {
         .select('id, imbarcazione_id, data_inizio, data_fine, motivo, note')
         .lte('data_inizio', dateTo).gte('data_fine', dateFrom)
       setBlocchi(blocchiData || [])
+
+      // Posti esterni (collettivi armatore)
+      const { data: postiEsterniData } = await supabase
+        .from('posti_esterni')
+        .select('imbarcazione_id, data, posti_occupati')
+        .gte('data', dateFrom)
+        .lte('data', dateTo)
+      setPostiEsterni(postiEsterniData || [])
 
       // NS3000
       try {
@@ -224,7 +247,7 @@ export default function PlanningMensile() {
   // ═══ CELL STATUS ═══
   function getCellStatus(imbarcazioneId: string, date: Date) {
     const dateStr = format(date, 'yyyy-MM-dd')
-    const isNs3000 = imbarcazioni.find(b => b.id === imbarcazioneId)?.fornitore_id === NS3000_FORNITORE_ID
+    const isNs3000 = imbarcazioni.find(b => b.id === imbarcazioneId)?.fornitore_id === NS3000_FORNITORE_ID && !!baToNs3000Map[imbarcazioneId] && !!baToNs3000Map[imbarcazioneId]
 
     if (isNs3000) {
       const ns3000BoatId = baToNs3000Map[imbarcazioneId]
@@ -237,7 +260,6 @@ export default function PlanningMensile() {
         if (booking) return { type: 'ns3000_booking', data: booking }
       }
       const avail = ns3000Availability[imbarcazioneId]?.[dateStr]
-      if (avail && !avail.available) console.log('NS3000 cell:', imbarcazioneId, dateStr, avail)
       if (avail && !avail.available && !avail.slots?.morning && !avail.slots?.afternoon)
         return { type: 'ns3000_occupato', reason: avail.reason || 'Occupata' }
       if (avail && avail.available && (!avail.slots?.morning || !avail.slots?.afternoon))
@@ -252,18 +274,34 @@ export default function PlanningMensile() {
       return date >= parseISO(b.data_inizio) && date <= parseISO(b.data_fine)
     })
     if (blocco) return { type: 'blocco', data: blocco }
+
+    // Collettivo in corso (posti esterni dall'armatore)
+    const postoEsterno = postiEsterni.find(p =>
+      p.imbarcazione_id === imbarcazioneId && p.data === dateStr && p.posti_occupati > 0
+    )
+    if (postoEsterno) {
+      const barca = imbarcazioni.find(b => b.id === imbarcazioneId)
+      const capienza = barca?.capacita_massima || 0
+      const liberi = Math.max(0, capienza - postoEsterno.posti_occupati)
+      return { type: 'collettivo', data: { posti_occupati: postoEsterno.posti_occupati, posti_liberi: liberi, capienza } }
+    }
+
     return { type: 'disponibile' }
   }
 
   // ═══ HANDLERS ═══
   function handleCellClick(barca: any, date: Date, e: React.MouseEvent) {
     const cs = getCellStatus(barca.id, date)
-    const isNs = barca.fornitore_id === NS3000_FORNITORE_ID
+    const isNs = barca.fornitore_id === NS3000_FORNITORE_ID && !!baToNs3000Map[barca.id]
 
     if (cs.type === 'prenotazione') { if (!isOperatore) mostraDettagliPrenotazione(cs.data.id); return }
     if (cs.type === 'ns3000_booking') { setNs3000BookingDetail(cs.data); setShowNs3000Dettagli(true); return }
     if (cs.type === 'blocco') { if (confirm('Rimuovere il blocco?')) rimuoviBlocco(cs.data.id); return }
     if (cs.type === 'ns3000_occupato') return
+    if (cs.type === 'collettivo') {
+      toast(`Collettivo in corso: ${cs.data.posti_occupati}/${cs.data.capienza} occupati, ${cs.data.posti_liberi} liberi`, { icon: '👥' })
+      return
+    }
 
     if (isOperatore) {
       setSelectedCell({ imbarcazioneId: barca.id, date, imbarcazioneNome: barca.nome })
@@ -318,13 +356,14 @@ export default function PlanningMensile() {
       trackAction('disponibilita', 'blocco', { barca: selectedCell.imbarcazioneNome, data: format(selectedCell.date, 'yyyy-MM-dd'), motivo: motivoBlocco || tipoBlocco })
     } catch (e) { toast.error('Errore creazione blocco') }
   }
-async function syncNs3000() {
+
+  async function syncNs3000() {
     try {
       setSyncing(true)
       const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch('/api/ns3000/sync', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token || ''}`
         },
@@ -347,6 +386,7 @@ async function syncNs3000() {
       setSyncing(false)
     }
   }
+
   async function rimuoviBlocco(id: string) {
     try {
       const { error } = await supabase.from('blocchi_imbarcazioni').delete().eq('id', id)
@@ -385,12 +425,21 @@ async function syncNs3000() {
     } else if (cs.type === 'ns3000_parziale') {
       bg = 'bg-amber-50 hover:bg-amber-100'; border = 'border-l-amber-400'
       content = <span className="text-[9px] text-amber-700">{cs.slots?.morning ? 'PM' : 'AM'}</span>
+    } else if (cs.type === 'collettivo') {
+      const liberi = cs.data.posti_liberi
+      if (liberi <= 0) {
+        bg = 'bg-red-100 hover:bg-red-200'; border = 'border-l-red-500'
+        content = <span className="text-[9px] font-bold text-red-600">0p</span>
+      } else {
+        bg = 'bg-teal-50 hover:bg-teal-100'; border = 'border-l-teal-500'
+        content = <span className="text-[9px] font-bold text-teal-700">{liberi}p</span>
+      }
     }
 
     return (
       <td key={`${barca.id}-${day.toISOString()}`} className="border border-gray-100 p-0" style={{ width: `${colSizes.giorno}px`, minWidth: `${colSizes.giorno}px` }}>
         <button onClick={(e) => handleCellClick(barca, day, e)}
-          className={`w-full flex items-center justify-center border-l-2 transition-all ${bg} ${border} ${isToday ? 'ring-1 ring-inset ring-blue-300' : ''}`}
+          className={`w-full flex items-center justify-center border-l-2 transition-all ${bg} ${border} ${isToday ? 'ring-1 ring-inset ring-blue-300' : ''} ${selectedDay === format(day, 'yyyy-MM-dd') ? 'brightness-90 shadow-inner' : ''}`}
           style={{ height: `${colSizes.altezza}px` }}>
           {content}
         </button>
@@ -416,7 +465,7 @@ async function syncNs3000() {
             <button onClick={() => setCurrentMonthStart(startOfMonth(new Date()))} className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-semibold">Oggi</button>
             <button onClick={() => setCurrentMonthStart(addMonths(currentMonthStart, 1))} className="px-2 py-1 border border-gray-300 rounded text-xs bg-white hover:bg-gray-50">▶</button>
             {!isOperatore && (
-              <button 
+              <button
                 onClick={syncNs3000}
                 disabled={syncing}
                 className={`px-3 py-1 rounded text-xs font-semibold ml-2 ${syncing ? 'bg-gray-300 text-gray-500' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
@@ -430,8 +479,6 @@ async function syncNs3000() {
         {/* FILTRI TOUR */}
         {!isOperatore && (
           <div className="space-y-1.5">
-            {/* Filtro Tour */}
-            {/* Filtro Tour + Pax */}
             <div className="flex items-center gap-2 flex-wrap">
               <select
                 value={filtroTour}
@@ -461,7 +508,6 @@ async function syncNs3000() {
                 <button onClick={() => { setFiltroTour('tutti'); setFiltroPax(0) }} className="text-xs text-red-500 hover:text-red-700">✕ Reset</button>
               )}
             </div>
-            {/* Filtro Tipo Barca */}
             <div className="flex flex-wrap gap-1.5">
               <span className="text-[10px] text-gray-400 self-center mr-1">Tipo:</span>
               <button onClick={() => setFiltroTipo('tutti')}
@@ -473,7 +519,7 @@ async function syncNs3000() {
                   className={`text-[11px] px-2.5 py-1.5 rounded-lg border transition-colors ${filtroTipo === tipo ? 'bg-gray-700 text-white border-gray-700 font-semibold' : 'border-gray-300 text-gray-600 hover:bg-gray-50 bg-white'}`}>
                   {TIPO_LABELS[tipo]}
                 </button>
-               ))}  
+              ))}
             </div>
           </div>
         )}
@@ -485,13 +531,14 @@ async function syncNs3000() {
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full inline-block"></span>Confermata</span>
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-indigo-500 rounded-full inline-block"></span>NS3000</span>
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-gray-300 rounded-full inline-block"></span>Bloccata</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-teal-500 rounded-full inline-block"></span>Collettivo</span>
         <span className="ml-auto text-gray-400">🚤 {totalBoats} barche</span>
       </div>
 
       {/* GRIGLIA */}
       <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="overflow-y-auto h-full">
-          <table className="border-collapse w-full" style={{ tableLayout: 'fixed' }}>
+        <div className="overflow-x-auto overflow-y-auto h-full" style={{ scrollBehavior: 'smooth' }}>
+          <table className="border-collapse" style={{ tableLayout: 'fixed', minWidth: `${colSizes.barca + monthDays.length * colSizes.giorno}px` }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-gray-50">
                 <th className="sticky left-0 z-20 bg-gray-100 border border-gray-200 px-1 py-2 text-left font-semibold text-gray-900 text-[10px] sm:text-xs"
@@ -503,7 +550,10 @@ async function syncNs3000() {
                   const isWeekend = [0, 6].includes(day.getDay())
                   return (
                     <th key={day.toISOString()}
-                      className={`border border-gray-200 py-1 text-center ${isToday ? 'bg-blue-100 text-blue-700' : isWeekend ? 'bg-orange-50 text-gray-700' : 'text-gray-700'}`}
+                      onClick={() => setSelectedDay(prev => prev === format(day, 'yyyy-MM-dd') ? null : format(day, 'yyyy-MM-dd'))}
+                      className={`border border-gray-200 py-1 text-center cursor-pointer transition-colors ${
+                        selectedDay === format(day, 'yyyy-MM-dd') ? 'bg-blue-200 text-blue-900 font-bold' : isToday ? 'bg-blue-100 text-blue-700' : isWeekend ? 'bg-orange-50 text-gray-700' : 'text-gray-700 hover:bg-gray-100'
+                      }`}
                       style={{ width: `${colSizes.giorno}px` }}>
                       <div className="flex flex-col leading-tight">
                         <span className="text-[8px] font-normal text-gray-400 uppercase">{format(day, 'EEEEE', { locale: it })}</span>
@@ -559,7 +609,7 @@ async function syncNs3000() {
         </div>
       </div>
 
-      <div className="mt-1 text-[10px] text-gray-400 text-center">Tocca cella per dettagli · Cella vuota per prenotare/bloccare · 🟠 Weekend</div>
+      <div className="mt-1 text-[10px] text-gray-400 text-center">Tocca cella per dettagli · Cella vuota per prenotare/bloccare · 🟠 Weekend · 🟢 Collettivo = posti liberi</div>
 
       {/* MODAL BLOCCO */}
       {showBloccoModal && selectedCell && (
