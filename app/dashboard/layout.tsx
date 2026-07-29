@@ -3,10 +3,9 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { LogOut, Menu, X, Ship, Anchor, Calendar, Users, Building2, BarChart3, UserCircle, Settings, ChevronDown, ChevronRight, MessageSquare, ShieldCheck, Users2 } from 'lucide-react'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { usePageTracker } from '@/lib/useActivityTracker'
-
+import { LogOut, Menu, X, Ship, Anchor, Calendar, Users, Building2, BarChart3, UserCircle, Settings, ChevronDown, ChevronRight, MessageSquare, ShieldCheck, Users2, DollarSign, FileSpreadsheet, Upload } from 'lucide-react'
 function DashboardLayoutContent({
   children,
 }: {
@@ -16,7 +15,7 @@ function DashboardLayoutContent({
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [adminMenuOpen, setAdminMenuOpen] = useState(false)
-  const { user, loading, isAdmin, logout } = useAuth()
+  const { user, loading, isAdmin, isManager, logout } = useAuth()
   usePageTracker()
 
   const handleLogout = async () => {
@@ -52,33 +51,38 @@ function DashboardLayoutContent({
 
   // ═══ MENU PRINCIPALE ═══
   const mainMenuItems = [
-    { href: '/dashboard/disponibilita', label: 'Planning', icon: Calendar, roles: ['admin', 'operatore', 'staff'] },
-    { href: '/dashboard/prenotazioni', label: 'Prenotazioni', icon: Calendar, roles: ['admin', 'staff'] },
-    { href: '/dashboard/collettivi', label: 'Small Group', icon: Users2, roles: ['admin', 'staff', 'operatore'] },
+    { href: '/dashboard/disponibilita', label: 'Planning', icon: Calendar, roles: ['admin', 'operatore', 'staff', 'manager'] },
+    { href: '/dashboard/prenotazioni', label: 'Prenotazioni', icon: Calendar, roles: ['admin', 'staff', 'manager'] },
+    { href: '/dashboard/collettivi', label: 'Small Group', icon: Users2, roles: ['admin', 'staff', 'operatore', 'manager'] },
     // Operatore: vede solo le sue barche + la propria scheda fornitore
     { href: '/dashboard/mie-barche', label: 'Le mie Barche', icon: Ship, roles: ['operatore'] },
     { href: '/dashboard/mia-azienda', label: 'La mia Azienda', icon: Building2, roles: ['operatore'] },
     { href: '/dashboard/mie-prenotazioni', label: 'Le mie Prenotazioni', icon: Calendar, roles: ['operatore'] },
-    { href: '/dashboard/contatti', label: 'Contatti', icon: Users, roles: ['admin', 'staff'] },
+    { href: '/dashboard/contatti', label: 'Contatti', icon: Users, roles: ['admin', 'staff', 'manager'] },
     { href: '/dashboard/skipper', label: 'I miei Skipper', icon: UserCircle, roles: ['operatore'] },
-    { href: '/dashboard/navi', label: 'Navi', icon: Ship, roles: ['admin', 'operatore', 'staff'] },
-  ]
+    { href: '/dashboard/navi', label: 'Navi', icon: Ship, roles: ['admin', 'operatore', 'staff', 'manager'] },
+    { href: '/dashboard/mio-rendiconto', label: 'Il mio Rendiconto', icon: DollarSign, roles: ['operatore'] },
+    ]
 
   // ═══ SOTTOMENU AMMINISTRAZIONE (solo admin) ═══
   const adminMenuItems = [
-    { href: '/dashboard/imbarcazioni', label: 'Flotta', icon: Ship },
-    { href: '/dashboard/servizi', label: 'Servizi', icon: Anchor },
-    { href: '/dashboard/skipper', label: 'Skipper', icon: UserCircle },
-    { href: '/dashboard/clienti', label: 'Clienti', icon: Users },
-    { href: '/dashboard/fornitori', label: 'Fornitori', icon: Building2 },
-    { href: '/dashboard/affiliati', label: 'Affiliati', icon: Users2 },
-    { href: '/dashboard/chatbot-leads', label: 'Chatbot Leads', icon: MessageSquare },
-    { href: '/dashboard/amministratori', label: 'Gestione Utenti', icon: ShieldCheck },
-    { href: '/dashboard/monitoraggio', label: 'Monitoraggio', icon: BarChart3 },
-    { href: '/dashboard/rendiconto', label: 'Rendiconto', icon: DollarSign },  // ← AGGIUNGI QUESTA
-
-  ]
-
+    { href: '/dashboard/imbarcazioni', label: 'Flotta', icon: Ship, roles: ['admin', 'manager'] },
+    { href: '/dashboard/servizi', label: 'Servizi', icon: Anchor, roles: ['admin', 'manager'] },
+    { href: '/dashboard/skipper', label: 'Skipper', icon: UserCircle, roles: ['admin'] },
+    { href: '/dashboard/clienti', label: 'Clienti', icon: Users, roles: ['admin', 'manager'] },
+    { href: '/dashboard/fornitori', label: 'Fornitori', icon: Building2, roles: ['admin', 'manager'] },
+    { href: '/dashboard/affiliati', label: 'Affiliati', icon: Users2, roles: ['admin'] },
+    { href: '/dashboard/chatbot-leads', label: 'Chatbot Leads', icon: MessageSquare, roles: ['admin', 'manager'] },
+    { href: '/dashboard/amministratori', label: 'Gestione Utenti', icon: ShieldCheck, roles: ['admin'] },
+    { href: '/dashboard/monitoraggio', label: 'Monitoraggio', icon: BarChart3, roles: ['admin'] },
+    { href: '/dashboard/rendiconto', label: 'Rendiconto', icon: DollarSign, roles: ['admin'] },
+    { href: '/dashboard/rotazione', label: 'Rotazione Barche', icon: Ship, roles: ['admin', 'operatore', 'staff', 'manager'] },
+    { href: '/dashboard/budget-navi', label: 'Budget Navi', icon: BarChart3, roles: ['admin'] },
+    { href: '/dashboard/contabilita/movimenti', label: 'Movimenti Contabili', icon: DollarSign, roles: ['admin'] },
+    { href: '/dashboard/contabilita/estratti-conto', label: 'Estratti Conto Soci', icon: FileSpreadsheet, roles: ['admin'] },
+    { href: '/dashboard/contabilita/importa-sumup', label: 'Importa SumUp', icon: Upload, roles: ['admin'] },
+    { href: '/dashboard/contabilita/bilancio', label: 'Bilancio Provvisorio', icon: FileSpreadsheet, roles: ['admin'] },
+   ]
   function isActive(href: string) {
     return pathname === href || pathname?.startsWith(href + '/')
   }
@@ -126,7 +130,7 @@ function DashboardLayoutContent({
               ))}
               
               {/* Dropdown Amministrazione (solo admin) */}
-              {isAdmin && (
+              {(isAdmin || isManager) && (
                 <div className="relative">
                   <Button 
                     variant="ghost" 
@@ -146,7 +150,7 @@ function DashboardLayoutContent({
                         onClick={() => setAdminMenuOpen(false)}
                       />
                       <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20">
-                        {adminMenuItems.map((item) => {
+                        {adminMenuItems.filter((item) => item.roles.includes(user?.role || '')).map((item) => {
                           const Icon = item.icon
                           return (
                             <Link
@@ -216,7 +220,7 @@ function DashboardLayoutContent({
               })}
               
               {/* Sottomenu Amministrazione mobile (solo admin) */}
-              {isAdmin && (
+              {(isAdmin || isManager) && (
                 <>
                   <button
                     onClick={() => setAdminMenuOpen(!adminMenuOpen)}
@@ -231,7 +235,7 @@ function DashboardLayoutContent({
                   
                   {adminMenuOpen && (
                     <div className="ml-8 space-y-1 border-l-2 border-blue-200 pl-4">
-                      {adminMenuItems.map((item) => {
+                      {adminMenuItems.filter((item) => item.roles.includes(user?.role || '')).map((item) => {
                         const Icon = item.icon
                         return (
                           <Link

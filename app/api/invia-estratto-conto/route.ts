@@ -25,10 +25,14 @@ async function generaPDF(fornitore: any, mese: string, prenotazioni: any[], tota
   page.drawText('BLU ALLIANCE', { x: 50, y: yPos, size: 20, font: fontBold, color: rgb(0.1, 0.3, 0.6) })
   yPos -= 18
   page.drawText('Consorzio Turistico Nautico - Porto di Salerno', { x: 50, y: yPos, size: 10, font: fontRegular, color: rgb(0.4, 0.4, 0.4) })
+  yPos -= 14
+  page.drawText('Via Zammarelli 12 - 84127 Salerno', { x: 50, y: yPos, size: 9, font: fontRegular, color: rgb(0.45, 0.45, 0.45) })
+  yPos -= 12
+  page.drawText('C.F./P.IVA 06411140657  -  Codice SDI KRRH6B9', { x: 50, y: yPos, size: 9, font: fontRegular, color: rgb(0.45, 0.45, 0.45) })
 
   page.drawText(`Generato il: ${new Date().toLocaleDateString('it-IT')}`, { x: 400, y: height - 50, size: 9, font: fontRegular, color: rgb(0.5, 0.5, 0.5) })
 
-  yPos -= 40
+  yPos -= 16
   page.drawText('ESTRATTO CONTO', { x: 50, y: yPos, size: 16, font: fontBold, color: rgb(0, 0, 0) })
   yPos -= 18
   page.drawText(`Periodo: ${meseTesto}`, { x: 50, y: yPos, size: 12, font: fontRegular, color: rgb(0, 0, 0) })

@@ -42,6 +42,10 @@ export async function POST(request: NextRequest) {
       font: fontRegular, 
       color: rgb(0.4, 0.4, 0.4) 
     })
+    yPos -= 14
+    page.drawText('Via Zammarelli 12 - 84127 Salerno', { x: 50, y: yPos, size: 9, font: fontRegular, color: rgb(0.45, 0.45, 0.45) })
+    yPos -= 12
+    page.drawText('C.F./P.IVA 06411140657  -  Codice SDI KRRH6B9', { x: 50, y: yPos, size: 9, font: fontRegular, color: rgb(0.45, 0.45, 0.45) })
 
     // Data generazione
     page.drawText(`Generato il: ${new Date().toLocaleDateString('it-IT')}`, { 
@@ -53,7 +57,7 @@ export async function POST(request: NextRequest) {
     })
 
     // ============ TITOLO ============
-    yPos -= 50
+    yPos -= 26
     page.drawText('ESTRATTO CONTO', { 
       x: 50, 
       y: yPos, 

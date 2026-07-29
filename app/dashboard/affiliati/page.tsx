@@ -1,4 +1,5 @@
 'use client'
+import { useRequireRole } from '@/lib/useRequireRole'
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -69,6 +70,7 @@ const emptyForm: Omit<Affiliato, 'id' | 'codice'> = {
 }
 
 export default function AffiliatiPage() {
+  const { authorized, loading: authLoading } = useRequireRole(['admin'])
   const [loading, setLoading] = useState(true)
   const [affiliati, setAffiliati] = useState<Affiliato[]>([])
   const [commissioni, setCommissioni] = useState<CommissioneRiga[]>([])
@@ -270,6 +272,7 @@ export default function AffiliatiPage() {
   const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent'
   const labelClass = 'block text-sm font-medium text-gray-700 mb-1'
 
+  if (authLoading || !authorized) return <div className="p-8 text-gray-600">Verifica accesso...</div>
   if (loading) return (
     <div className="p-8 text-gray-500 flex items-center gap-2">
       <div className="animate-spin w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full" />

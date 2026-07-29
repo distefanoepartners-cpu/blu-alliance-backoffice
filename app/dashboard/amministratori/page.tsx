@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import { useRequireRole } from '@/lib/useRequireRole'
 
 export default function AmministratoriPage() {
+  const { authorized, loading: authLoading } = useRequireRole(['admin'])
   const [amministratori, setAmministratori] = useState<any[]>([])
   const [fornitori, setFornitori] = useState<any[]>([])
   const [credenziali, setCredenziali] = useState<Record<string, string>>({})
@@ -260,6 +262,9 @@ export default function AmministratoriPage() {
     setShowPassword(false)
   }
 
+  if (authLoading || !authorized) {
+    return <div className="p-8"><div className="text-gray-600">Verifica accesso...</div></div>
+  }
   if (loading) {
     return <div className="p-8"><div className="text-gray-600">Caricamento...</div></div>
   }
@@ -321,6 +326,7 @@ export default function AmministratoriPage() {
                           <option value="admin">Admin</option>
                           <option value="operatore">Operatore</option>
                           <option value="staff">Staff</option>
+                          <option value="manager">Manager</option>
                         </select>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
@@ -484,6 +490,7 @@ export default function AmministratoriPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg">
                   <option value="operatore">Operatore</option>
                   <option value="staff">Staff</option>
+                  <option value="manager">Manager</option>
                   <option value="admin">Admin</option>
                 </select>
                 <p className="text-xs text-gray-500 mt-1">Admin: accesso completo | Staff: prenotazioni e planning | Operatore: solo proprie imbarcazioni</p>

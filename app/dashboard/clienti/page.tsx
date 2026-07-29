@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/api-client'
 import toast from 'react-hot-toast'
 
 export default function ClientiPage() {
@@ -32,13 +32,17 @@ export default function ClientiPage() {
 
   async function loadClienti() {
     try {
-      const { data, error } = await supabase
-        .from('clienti')
-        .select('*')
-        .order('cognome')
-
-      if (error) throw error
-      setClienti(data || [])
+      const res = await authFetch('/api/clienti?limit=1000')
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Errore caricamento')
+      }
+      const { clienti } = await res.json()
+      // L'API ordina per created_at desc; riordino per cognome lato client
+      const ordered = (clienti || []).sort((a: any, b: any) =>
+        (a.cognome || '').localeCompare(b.cognome || '', 'it')
+      )
+      setClienti(ordered)
     } catch (error: any) {
       toast.error('Errore nel caricamento')
       console.error('Errore:', error)
@@ -58,26 +62,30 @@ export default function ClientiPage() {
         tipo_documento: formData.tipo_documento || null,
         numero_documento: formData.numero_documento || null,
         patente_nautica: formData.patente_nautica || null,
-        updated_at: new Date().toISOString()
+        // updated_at lo gestisce l'API PUT lato server
       }
 
       if (editingId) {
-        // Update
-        const { error } = await supabase
-          .from('clienti')
-          .update(dataToSave)
-          .eq('id', editingId)
-
-        if (error) throw error
+        const res = await authFetch(`/api/clienti/${editingId}`, {
+          method: 'PUT',
+          body: JSON.stringify(dataToSave),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.error || 'Errore aggiornamento')
+        }
         toast.success('Cliente aggiornato!')
       } else {
-        // Insert
-        const { error } = await supabase
-          .from('clienti')
-          .insert([dataToSave])
-
-        if (error) throw error
-        toast.success('Cliente creato!')
+        const res = await authFetch('/api/clienti', {
+          method: 'POST',
+          body: JSON.stringify(dataToSave),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.error || 'Errore creazione')
+        }
+        const { existing } = await res.json()
+        toast.success(existing ? 'Cliente già presente con questa email' : 'Cliente creato!')
       }
 
       resetForm()
@@ -88,22 +96,20 @@ export default function ClientiPage() {
     }
   }
 
-  async function handleDelete(id: string) {
+ async function handleDelete(id: string) {
     if (!confirm('Sei sicuro di voler eliminare questo cliente?')) return
 
     try {
-      const { error } = await supabase
-        .from('clienti')
-        .delete()
-        .eq('id', id)
-
-      if (error) throw error
-
+      const res = await authFetch(`/api/clienti/${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || "Errore nell'eliminazione")
+      }
       toast.success('Cliente eliminato!')
       loadClienti()
     } catch (error: any) {
       console.error('Errore:', error)
-      toast.error('Errore nell\'eliminazione')
+      toast.error(error.message || "Errore nell'eliminazione")
     }
   }
 

@@ -160,11 +160,13 @@ function generateEmailCliente(prenotazione: any, lingua: string, tipo: string) {
       time: 'Ora imbarco:',
       payment_summary: 'Riepilogo Pagamento',
       payment_type: 'Tipo pagamento',
-      amount_paid: 'Importo pagato',
+      amount_paid: 'Importo versato',
       balance_due: 'Saldo da pagare',
       total: 'Totale',
       deposit: 'Caparra',
       full_payment: 'Pagamento completo',
+      fully_paid_msg: '✅ Hai già pagato l\'intero importo. Non devi saldare nulla al desk.',
+      balance_at_desk_msg: 'Da saldare al desk il giorno del tour:',
       contact_us: 'Per qualsiasi informazione non esitare a contattarci.',
       thanks: 'Grazie per aver scelto Blu Alliance!',
       team: 'Il Team di Blu Alliance',
@@ -190,6 +192,8 @@ function generateEmailCliente(prenotazione: any, lingua: string, tipo: string) {
       total: 'Total',
       deposit: 'Deposit',
       full_payment: 'Full payment',
+      fully_paid_msg: '✅ You have paid the full amount. Nothing else is due at the desk.',
+      balance_at_desk_msg: 'To be paid at the desk on the day of the tour:',
       contact_us: 'For any information, please do not hesitate to contact us.',
       thanks: 'Thank you for choosing Blu Alliance!',
       team: 'The Blu Alliance Team',
@@ -265,6 +269,8 @@ function generateEmailCliente(prenotazione: any, lingua: string, tipo: string) {
       total: 'Total',
       deposit: 'Depósito',
       full_payment: 'Pago completo',
+      fully_paid_msg: '✅ Ha pagado el importe completo. No debe abonar nada en recepción.',
+      balance_at_desk_msg: 'A pagar en recepción el día del tour:',
       contact_us: 'Para cualquier información no dude en contactarnos.',
       thanks: '¡Gracias por elegir Blu Alliance!',
       team: 'El Equipo de Blu Alliance',
@@ -279,8 +285,13 @@ function generateEmailCliente(prenotazione: any, lingua: string, tipo: string) {
   const persone = prenotazione.numero_persone || '-'
   const prezzoTotale = Number(prenotazione.prezzo_totale || 0)
   const caparraRicevuta = Number(prenotazione.caparra_ricevuta || prenotazione.importo_pagato || 0)
-  const saldoDovuto = prezzoTotale - caparraRicevuta
-
+  const saldoRicevuto = Number(prenotazione.saldo_ricevuto || 0)
+  const pagamentiSuddivisi = Array.isArray(prenotazione.payment_lines)
+    ? prenotazione.payment_lines.reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0)
+    : 0
+  const pagatoTotale = caparraRicevuta + saldoRicevuto + pagamentiSuddivisi
+  const saldoDovuto = Math.max(0, prezzoTotale - pagatoTotale)
+  const tuttoPagato = saldoDovuto <= 0.01
   const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -331,7 +342,25 @@ function generateEmailCliente(prenotazione: any, lingua: string, tipo: string) {
                   <h3 style="margin:0 0 10px;color:#0066CC;font-size:15px;">⚓ ${t.boarding_point}</h3>
                   <p style="margin:5px 0;"><strong style="font-size:20px;color:#111;">${porto}</strong></p>
                   ${ora ? `<p style="margin:8px 0 0;color:#555;">${t.time} <strong>${ora}</strong></p>` : ''}
-                </td></tr>
+                </td></tr><!-- PAGAMENTO -->
+                              <table width="100%" cellpadding="20" cellspacing="0" border="0" style="background:#d4edda;border-radius:12px;margin:0 0 20px;border-left:4px solid #28a745;">
+                                <tr><td>
+                                  <h3 style="margin:0 0 15px;color:#155724;font-size:15px;">💳 ${t.payment_summary}</h3>
+                                  <table width="100%" cellpadding="5" cellspacing="0">
+                                    ${caparraRicevuta > 0 ? `<tr><td style="font-weight:600;color:#333;">${t.amount_paid}</td><td align="right" style="color:#28a745;font-size:18px;"><strong>€${caparraRicevuta.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</strong></td></tr>` : ''}
+                                    ${saldoDovuto > 0 ? `<tr><td style="font-weight:600;color:#333;">${t.balance_due}</td><td align="right" style="color:#856404;"><strong>€${saldoDovuto.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</strong></td></tr>` : ''}
+                                    <tr style="border-top:2px solid #28a745;">
+                                      <td style="font-weight:700;padding-top:10px;color:#111;">${t.total}</td>
+                                      <td align="right" style="font-size:20px;padding-top:10px;"><strong>€${prezzoTotale.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</strong></td>
+                                    </tr>
+                                  </table>
+                                </td></tr>
+                              </table>
+                
+                              <p style="color:#666;font-size:14px;margin:20px 0 10px;">${t.contact_us}</p>
+                              <p style="margin:20px 0 0;"><strong>${t.thanks}</strong><br><em style="color:#666;">${t.team}</em></p>
+                            </td>
+                          </tr>
               </table>
 
               <!-- PAGAMENTO -->
@@ -339,13 +368,19 @@ function generateEmailCliente(prenotazione: any, lingua: string, tipo: string) {
                 <tr><td>
                   <h3 style="margin:0 0 15px;color:#155724;font-size:15px;">💳 ${t.payment_summary}</h3>
                   <table width="100%" cellpadding="5" cellspacing="0">
-                    ${caparraRicevuta > 0 ? `<tr><td style="font-weight:600;color:#333;">${t.amount_paid}</td><td align="right" style="color:#28a745;font-size:18px;"><strong>€${caparraRicevuta.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</strong></td></tr>` : ''}
-                    ${saldoDovuto > 0 ? `<tr><td style="font-weight:600;color:#333;">${t.balance_due}</td><td align="right" style="color:#856404;"><strong>€${saldoDovuto.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</strong></td></tr>` : ''}
-                    <tr style="border-top:2px solid #28a745;">
-                      <td style="font-weight:700;padding-top:10px;color:#111;">${t.total}</td>
-                      <td align="right" style="font-size:20px;padding-top:10px;"><strong>€${prezzoTotale.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</strong></td>
+                    <tr>
+                      <td style="font-weight:600;color:#333;">${t.total}</td>
+                      <td align="right" style="font-size:18px;"><strong>€${prezzoTotale.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</strong></td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight:600;color:#333;">${t.amount_paid}</td>
+                      <td align="right" style="color:#28a745;font-size:18px;"><strong>€${pagatoTotale.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</strong></td>
                     </tr>
                   </table>
+                  ${tuttoPagato
+                    ? `<p style="margin:14px 0 0;padding:12px;background:#c3f0ca;border-radius:8px;color:#155724;font-weight:600;text-align:center;font-size:15px;">${t.fully_paid_msg}</p>`
+                    : `<p style="margin:14px 0 0;padding:12px;background:#fff3cd;border-radius:8px;color:#856404;font-weight:600;text-align:center;font-size:15px;">${t.balance_at_desk_msg} <strong style="font-size:18px;">€${saldoDovuto.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</strong></p>`
+                  }
                 </td></tr>
               </table>
 

@@ -8,7 +8,7 @@ interface AuthUser {
   id: string
   email: string
   full_name?: string
-  role: 'admin' | 'operatore' | 'staff' | 'partner'
+  role: 'admin' | 'operatore' | 'staff' | 'partner' | 'manager'
   fornitore_id?: string | null
 }
 
@@ -16,6 +16,7 @@ interface AuthContextType {
   user: AuthUser | null
   loading: boolean
   isAdmin: boolean
+  isManager: boolean
   isOperatore: boolean
   fornitoreId: string | null
   logout: () => Promise<void>
@@ -25,6 +26,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   isAdmin: false,
+  isManager: false,
   isOperatore: false,
   fornitoreId: null,
   logout: async () => {},
@@ -178,6 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     loading,
     isAdmin: user?.role === 'admin' || false,
+    isManager: user?.role === 'manager' || false,
     isOperatore: user?.role === 'operatore' || false,
     fornitoreId: user?.fornitore_id || null,
     logout,

@@ -21,6 +21,7 @@ export default function ImbarcazioniPage() {
   const [uploadingImage, setUploadingImage] = useState(false)
   const [filtroFornitore, setFiltroFornitore] = useState<string>('tutti')
   const [filtroCategoria, setFiltroCategoria] = useState<string>('tutti')
+  const [filtroTipo, setFiltroTipo] = useState<string>('tutti')
   const [searchTerm, setSearchTerm] = useState('')
 
   const [formData, setFormData] = useState({
@@ -58,7 +59,7 @@ export default function ImbarcazioniPage() {
 
   useEffect(() => {
     applicaFiltri()
-  }, [imbarcazioni, filtroFornitore, filtroCategoria, searchTerm])
+  }, [imbarcazioni, filtroFornitore, filtroCategoria, filtroTipo, searchTerm])
 
   async function loadData() {
     try {
@@ -146,6 +147,10 @@ export default function ImbarcazioniPage() {
 
     if (filtroCategoria !== 'tutti') {
       filtrate = filtrate.filter(i => i.categoria === filtroCategoria)
+    }
+
+    if (filtroTipo !== 'tutti') {
+      filtrate = filtrate.filter(i => i.tipo === filtroTipo)
     }
 
     if (searchTerm.trim()) {
@@ -485,6 +490,22 @@ export default function ImbarcazioniPage() {
               <option value="simple">Simple</option>
               <option value="premium">Premium</option>
               <option value="luxury">Luxury</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Tipo</label>
+            <select
+              value={filtroTipo}
+              onChange={(e) => setFiltroTipo(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            >
+              <option value="tutti">Tutti i tipi</option>
+              <option value="gommone">Gommone</option>
+              <option value="barca">Barca</option>
+              <option value="barca_vela">Barca a Vela</option>
+              <option value="yacht">Yacht</option>
+              <option value="catamarano">Catamarano</option>
+              <option value="gozzo">Gozzo</option>
             </select>
           </div>
         </div>

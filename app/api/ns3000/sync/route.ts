@@ -9,7 +9,35 @@ const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
-
+// ⭐ 2026-05-11 — Mappa NS3000 boat_id → BA imbarcazione_id
+// Deve corrispondere alle stesse mappe definite nei 3 file frontend BA:
+//  - app/dashboard/disponibilita/page.tsx (ns3000ToBaMap)
+//  - app/dashboard/collettivi/page.tsx (NS3000_TO_BA_MAP)
+//  - components/BookingModal.tsx (BA_TO_NS3000_MAP, inverso)
+// Espandi quando aggiungi nuove barche NS3000.
+const NS3000_TO_BA_MAP: Record<string, string> = {
+  '4a222a73-304b-4945-813b-9548ba201675': 'b743d220-6200-49de-9324-68297e4eee75',
+  'd03cfe13-bcb6-4f98-bda4-a18b8bf7957d': '64e06e82-ed6e-4f23-b06e-14533a0187c6',
+  '00ce8828-ebf9-4aad-8ad8-8f6b4e90a1e3': '7e854592-bb5d-4971-98aa-ae66c2fa66ba',
+  '2edce19e-3687-42b9-bb87-57e2aabfccd2': 'b2a20895-eeab-493d-a2fb-53ef5ba1d220',
+  '937298ab-2a15-4ace-adb2-b63dd1b865b1': '4c4f4b54-4ee6-481f-94f9-a142b5d651b0',
+  '6800721d-a8e9-4217-b7a2-8548359c6cfc': '9a6cc58f-bb70-440e-92a1-d2e2c2712e5b',
+  '42d4c904-f2e1-4436-931b-3e7b651bd7a6': '2f4f1a71-5037-4fb0-bbd1-ef6c6acf8dc5',
+  '52a7e9d0-444e-4801-a095-afcbba7ceed5': 'b2c15f7e-ffb2-4afa-bf19-d53f8d26902b',
+  '180dd752-b2b4-4318-beed-8bc15b3877c2': '557ecf08-2e88-4914-a1d9-da5ec5bf5845',
+  '8c1b5b3d-d4a2-441c-8f8e-71b88ff6c966': '07673392-e08c-4d53-a128-e9d6c405917d',
+  // ⭐ 2026-05-11 — Domar F8 mapping aggiornato (vecchia c35aefd0 è diventata Mito 45 su NS3000)
+  '0e705ad6-bcaf-445f-b640-2c4b0a9166ff': '2d4995ec-35b3-4358-ace1-54621a9528ed', // 12 - Domar F8
+  'c35aefd0-6721-4f01-aeec-2d47bdf9f24f': 'e27ce151-0cd0-444e-b5f9-040b09859377', // Mito 45 (ex Cab Dorado NS3000)
+  'fe759df8-5d8e-401f-8fb2-dfaa3642c33c': '51231c4f-b929-466c-aed3-9440639e0bd7',
+  'd5bff230-0e6a-4211-b0ce-342e8fbace51': '8d4d1bd6-142f-4d0f-8854-333742eeeba3',
+  '1365d4d3-0ffb-48a8-a8a6-d3c49dd22145': 'a079598f-b25d-49d6-90ce-b25146687a31',
+  '636cb5d4-1316-4382-90db-fa6c16deb1f4': '31d0ac07-57a9-472d-b07a-f9a26b2ba89e',
+  '7b039929-1af2-46ab-9a91-f051497161e7': 'c8638c23-cd35-4c11-8333-4316f1ca4726',
+  '02ffd51e-da3f-45fa-b2a5-92acc254e2a6': 'd8262b01-07d0-4795-ba31-e64c6eaf6f0f',
+  '3b967967-d7de-48bb-9f03-5e779aa15a27': '43d0b751-da8d-4181-aabc-ba3b217142bc',
+  'fa08fd1a-43af-4f4d-9f52-8eb0b5abf1ca': 'd37bd3b0-35a0-48be-81b9-9816686137b1',
+}
 /**
  * POST /api/ns3000/sync
  * 
@@ -75,7 +103,7 @@ export async function POST(request: Request) {
     // 2. Recupera prenotazioni già sincronizzate in locale
     const { data: localSynced } = await supabaseAdmin
       .from('prenotazioni')
-      .select('id, ns3000_booking_id, updated_at')
+      .select('id, ns3000_booking_id, updated_at, source')
       .not('ns3000_booking_id', 'is', null)
 
     const syncedMap = new Map(
@@ -91,8 +119,8 @@ export async function POST(request: Request) {
       try {
         const existing = syncedMap.get(ns3000Booking.id)
 
-        // ⭐ PRIVACY: Mappa solo dati indisponibilità, no dati cliente
-        const mappedData = {
+       // ⭐ PRIVACY: Mappa solo dati indisponibilità + imbarcazione_id, no dati cliente
+        const mappedData: any = {
           codice_prenotazione: `NS-${ns3000Booking.booking_number}`,
           data_servizio: ns3000Booking.booking_date,
           ora_inizio: ns3000Booking.time_slot === 'morning' ? '09:00' :
@@ -109,14 +137,33 @@ export async function POST(request: Request) {
           last_synced_at: new Date().toISOString()
         }
 
+        // ⭐ 2026-05-11 — Propaga imbarcazione_id quando la barca NS3000 è mappata su BA
+        // Questo permette al sync di correggere mismatch dovuti a cambio barca su NS3000
+        // (es. operatore NS3000 sposta la booking da Cayman 6 a Cayman 5 dopo creazione BA)
+        const mappedImbarcazioneId = NS3000_TO_BA_MAP[ns3000Booking.boat_id]
+        if (mappedImbarcazioneId) {
+          mappedData.imbarcazione_id = mappedImbarcazioneId
+        }
+
         if (existing) {
           const ns3000Updated = new Date(ns3000Booking.updated_at).getTime()
           const localUpdated = new Date(existing.updated_at).getTime()
 
           if (ns3000Updated > localUpdated) {
+            // ⭐ 2026-06-24 — FIX stato che "torna in attesa":
+            // Per le prenotazioni NATE su BA, lo stato è gestito a mano dagli
+            // operatori BA e NON deve mai essere sovrascritto dal sync NS3000.
+            // Rimuoviamo il campo `stato` dall'update così la modifica manuale
+            // (es. "completata") resta stabile. Le prenotazioni nate su NS3000
+            // continuano a ricevere lo stato dal sync normalmente.
+            const updateData = { ...mappedData }
+            if (existing.source === 'blualliance') {
+              delete updateData.stato
+            }
+
             await supabaseAdmin
               .from('prenotazioni')
-              .update(mappedData)
+              .update(updateData)
               .eq('id', existing.id)
             updated++
           } else {
@@ -194,7 +241,8 @@ function mapStatus(statusId: string): string {
     'ab4bad3b-2f9f-4a0b-a867-54f9f1efc470': 'confermata',
     '5051f7bd-c062-4e63-9e30-4336c37be226': 'in_attesa',
     'e7798e9d-fcea-4f91-9661-454e403e673e': 'completata',
-    '79468a4e-b39e-456a-9ea0-0b4085ad662e': 'cancellata',
+    '79468a4e-b39e-456a-9ea0-0b4085ad662e': 'da_recuperare',   // ex 'cancellata' — semantica chiarita
+    '69db943f-96d3-4ae0-bb23-53c359e82433': 'annullata',       // ⭐ 2026-05-11 — nuovo status NS3000
   }
   return statusMap[statusId] || 'in_attesa'
 }

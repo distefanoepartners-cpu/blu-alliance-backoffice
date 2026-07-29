@@ -31,6 +31,7 @@ interface Fornitore {
   art_68?: boolean
   num_dipendenti?: number
   attivo: boolean
+  forfettario?: boolean
   created_at?: string
   imbarcazioni?: any[]
   skipper?: any[]
@@ -47,7 +48,7 @@ export default function FornitoriPage() {
   const [filtroStato, setFiltroStato] = useState<string>('tutti')
   const [showEstrattoModal, setShowEstrattoModal] = useState(false)
   const [fornitoreSelezionato, setFornitoreSelezionato] = useState<any>(null)
-  const [meseSelezionato, setMeseSelezionato] = useState(format(new Date(), 'yyyy-MM'))
+  const [meseSelezionato, setMeseSelezionato] = useState(() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return format(d, 'yyyy-MM') })
   const [generandoPdf, setGenerandoPdf] = useState(false)
   const [inviandoEmail, setInviandoEmail] = useState(false)
   const emptyForm: Fornitore = {
@@ -75,7 +76,8 @@ export default function FornitoriPage() {
     capitaneria_porto: '',
     art_68: false,
     num_dipendenti: 0,
-    attivo: true
+    attivo: true,
+    forfettario: false
   }
 
   const [formData, setFormData] = useState<Fornitore>(emptyForm)
@@ -166,6 +168,7 @@ export default function FornitoriPage() {
       iban: f.iban || '',
       banca: f.banca || '',
       percentuale_commissione: f.percentuale_commissione ?? 25,
+      forfettario: f.forfettario ?? false,
       note: f.note || '',
       base_nautica: f.base_nautica || '',
       data_inizio_attivita: f.data_inizio_attivita || '',
@@ -203,7 +206,8 @@ export default function FornitoriPage() {
         capitaneria_porto: formData.capitaneria_porto || null,
         art_68: formData.art_68 || false,
         num_dipendenti: formData.num_dipendenti || null,
-        attivo: formData.attivo
+        attivo: formData.attivo,
+        forfettario: formData.forfettario || false
       }
 
       if (editingId) {
@@ -237,7 +241,8 @@ export default function FornitoriPage() {
   }
 function openEstrattoModal(fornitore: any) {
     setFornitoreSelezionato(fornitore)
-    setMeseSelezionato(format(new Date(), 'yyyy-MM'))
+    const _mp = new Date(); _mp.setDate(1); _mp.setMonth(_mp.getMonth() - 1)
+    setMeseSelezionato(format(_mp, 'yyyy-MM'))
     setShowEstrattoModal(true)
   }
 
@@ -265,8 +270,9 @@ function openEstrattoModal(fornitore: any) {
         commissioni: 0,
         netto: 0
       }
-      totali.commissioni = totali.fatturato * ((fornitoreSelezionato.percentuale_commissione || 25) / 100)
-      totali.netto = totali.fatturato - totali.commissioni
+      const baseForf = fornitoreSelezionato.forfettario ? (totali.fatturato / 1.22) : totali.fatturato
+      totali.commissioni = Math.round(baseForf * (fornitoreSelezionato.percentuale_commissione || 25)) / 100
+      totali.netto = Math.round((baseForf - totali.commissioni) * 100) / 100
 
       const response = await fetch('/api/genera-estratto-conto', {
         method: 'POST',
@@ -319,8 +325,9 @@ function openEstrattoModal(fornitore: any) {
         commissioni: 0,
         netto: 0
       }
-      totali.commissioni = totali.fatturato * ((fornitoreSelezionato.percentuale_commissione || 25) / 100)
-      totali.netto = totali.fatturato - totali.commissioni
+      const baseForf = fornitoreSelezionato.forfettario ? (totali.fatturato / 1.22) : totali.fatturato
+      totali.commissioni = Math.round(baseForf * (fornitoreSelezionato.percentuale_commissione || 25)) / 100
+      totali.netto = Math.round((baseForf - totali.commissioni) * 100) / 100
 
       const response = await fetch('/api/invia-estratto-conto', {
         method: 'POST',
@@ -788,6 +795,13 @@ function openEstrattoModal(fornitore: any) {
                       rows={2}
                     />
                   </div>
+                </div>
+                <div className="mt-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={formData.forfettario || false} onChange={(e) => setFormData(prev => ({ ...prev, forfettario: e.target.checked }))} className="w-4 h-4" />
+                    <span className="text-sm font-medium text-gray-700">Regime forfettario</span>
+                  </label>
+                  <p className="text-xs text-gray-500 mt-1">Se attivo, commissioni e netto sono calcolati sull'imponibile (scorporo IVA 22%)</p>
                 </div>
               </div>
 

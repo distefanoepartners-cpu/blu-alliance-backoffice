@@ -1,4 +1,5 @@
 'use client'
+import { useRequireRole } from '@/lib/useRequireRole'
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -36,6 +37,7 @@ interface DailyStats {
 }
 
 export default function MonitoraggioPage() {
+  const { authorized, loading: authLoading } = useRequireRole(['admin'])
   const [userStats, setUserStats] = useState<UserStats[]>([])
   const [recentActivity, setRecentActivity] = useState<ActivityLog[]>([])
   const [dailyStats, setDailyStats] = useState<DailyStats[]>([])
@@ -146,6 +148,7 @@ export default function MonitoraggioPage() {
     return { label: 'Inattivo', color: 'bg-red-100 text-red-700 border-red-200', dot: 'bg-red-500' }
   }
 
+  if (authLoading || !authorized) return <div className="p-8"><div className="text-gray-600">Verifica accesso...</div></div>
   if (loading) {
     return <div className="p-8"><div className="text-gray-600">Caricamento monitoraggio...</div></div>
   }

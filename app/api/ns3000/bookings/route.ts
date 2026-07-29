@@ -2,7 +2,7 @@
 // Proxya le chiamate booking verso NS3000 /api/external/bookings
 
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 
 const NS3000_API_URL = process.env.NS3000_API_URL
 const NS3000_API_KEY = process.env.NS3000_API_KEY
@@ -34,6 +34,18 @@ export async function GET(request: Request) {
     }
 
     const data = await res.json()
+
+    // ⭐ 2026-05-11 — Mappa join customers ai campi flat attesi dal frontend
+    if (data.bookings) {
+      data.bookings = data.bookings.map((b: any) => ({
+        ...b,
+        customer_name: b.customers?.first_name || '',
+        customer_surname: b.customers?.last_name || '',
+        customer_email: b.customers?.email || '',
+        customer_phone: b.customers?.phone || '',
+      }))
+    }
+
     return NextResponse.json(data)
   } catch (error: any) {
     console.error('Errore GET NS3000 bookings:', error)
@@ -51,6 +63,14 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
+
+    // ⭐ Normalizza booking_type: il BookingModal BA può inviare 'collettivo' (IT)
+    // dal ramo NS3000 diretto o 'collective' (EN) dagli altri rami. Uniformiamo qui.
+    const isCollective =
+      body.booking_type === 'collective' ||
+      body.booking_type === 'collettivo' ||
+      body.service_type === 'collective' ||
+      body.service_type === 'collettivo'
 
     // ⭐ Validazione prezzo lato BA prima di inviare a NS3000
     const finalPrice = parseFloat(body.price) || parseFloat(body.final_price) || 0
@@ -72,7 +92,7 @@ export async function POST(request: Request) {
     const ns3000Payload = {
       // Barca e data
       boat_id: body.boat_id,
-      service_id: body.service_id || null,  // ⭐ FIX 2026-04-30: serve a NS3000 per check capienza collettivi
+      service_id: body.service_id || null,
       booking_date: body.booking_date,
       booking_end_date: body.booking_end_date || body.booking_date,
       time_slot: body.time_slot || 'full_day',
@@ -83,28 +103,48 @@ export async function POST(request: Request) {
       customer_email: body.customer_email,
       customer_phone: body.customer_phone || '',
 
+      // ⭐ 2026-05-14 — Documento cliente (mappato da BA)
+      document_type: body.tipo_documento || body.document_type || null,
+      document_number: body.numero_documento || body.document_number || null,
+      document_expiry: body.scadenza_documento || body.document_expiry || null,
+      has_license: body.patente_nautica ? true : false,
+      license_number: body.patente_nautica || body.license_number || null,
+      license_expiry: body.scadenza_patente_nautica || body.license_expiry || null,
+
       // Servizio
       num_passengers: body.num_passengers,
       service_type: body.booking_type === 'collective' ? 'collective' : 'charter',
       booking_type: body.booking_type || 'tour',
 
-      // ⭐ Prezzo — campo 'price' è quello che NS3000 legge come final_price
+      // Prezzi
       price: finalPrice,
       base_price: finalPrice,
       final_price: finalPrice,
 
-      // ⭐ Pagamenti — tracciati anche lato NS3000 per saldi reciproci
+      // Pagamenti
       deposit_amount: depositAmount,
       balance_amount: balanceAmount,
       caution_amount: parseFloat(body.caution_amount) || 0,
 
-      // ⭐ Riferimento BA per tracciabilità
-      // external_ref viene salvato in NS3000 e appare come "codice BA"
+      // Riferimento BA
       external_ref: baBookingCode,
       external_id: body.external_id || null,
 
+      // ⭐ 2026-05-14 — Canale operativo: BA come "fornitori blualliance"
+      booking_source: 'blualliance',
+      source: 'blualliance',
+
+      // ⭐ 2026-05-14 — Tracciamento operatore (created_by lato NS3000)
+      created_by_name: body.created_by_name || 'Blu Alliance',
+
+      // Orari imbarco/sbarco
+      boarding_port: body.porto_imbarco || body.boarding_port || null,
+      disembark_port: body.porto_imbarco || body.disembark_port || null,
+      lang: body.lingua || body.lang || 'it',
+
       // Note
       notes: body.notes || null,
+      internal_notes: body.internal_notes || null,
     }
 
     // Invia a NS3000
@@ -166,7 +206,7 @@ export async function POST(request: Request) {
           numero_persone: body.num_passengers,
           prezzo_totale: finalPrice,
           stato: body.stato || 'confermata',
-          tipo_tour: body.booking_type === 'collective' ? 'collettivo' : 'privato',
+          tipo_tour: isCollective ? 'collettivo' : 'privato',
           metodo_pagamento: body.metodo_pagamento || 'altro',
           metodo_pagamento_caparra: body.metodo_pagamento_caparra || null,
           metodo_pagamento_saldo: body.metodo_pagamento_saldo || null,
@@ -176,9 +216,11 @@ export async function POST(request: Request) {
           lingua: body.lingua || 'it',
           porto_imbarco: body.porto_imbarco || null,
           ora_imbarco: body.ora_imbarco || null,
-          note_cliente: body.note_cliente || null,
-          note_interne: body.notes || null,
+          note_cliente: body.notes || null,
+          note_interne: body.internal_notes || null,
           source: 'blualliance',
+          // ⭐ Nave di provenienza (nave_nome popolato dal trigger trg_sync_nave_nome)
+          nave_id: body.nave_id ?? null,
           // Riferimento incrociato con NS3000
           ns3000_booking_id: ns3000Result.booking?.id || null,
           ns3000_booking_number: ns3000Result.booking?.booking_number || null,

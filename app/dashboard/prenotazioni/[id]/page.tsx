@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/api-client'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import toast from 'react-hot-toast'
@@ -32,25 +33,23 @@ export default function PrenotazioneDettaglioPage() {
     try {
       setLoading(true)
 
-      const { data, error } = await supabase
-        .from('prenotazioni')
-        .select(`
-          *,
-          clienti(nome, cognome, email, telefono, nazione),
-          servizi(nome, tipo, descrizione),
-          imbarcazioni(nome, tipo, categoria),
-          log_pagamenti(*)
-        `)
-        .eq('id', params.id)
-        .single()
-
-      if (error) throw error
-
+      const res = await authFetch(`/api/prenotazioni/${params.id}`)
+      if (!res.ok) {
+        if (res.status === 404) {
+          toast.error('Prenotazione non trovata')
+        } else {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.error || 'Errore caricamento')
+        }
+        router.push('/dashboard/prenotazioni')
+        return
+      }
+      const { prenotazione: data } = await res.json()
       setPrenotazione(data)
     } catch (error: any) {
       console.error('Errore:', error)
       toast.error('Errore nel caricamento della prenotazione')
-      router.push('/backoffice/prenotazioni')
+      router.push('/dashboard/prenotazioni')
     } finally {
       setLoading(false)
     }
@@ -60,33 +59,37 @@ export default function PrenotazioneDettaglioPage() {
     if (!prenotazione) return
 
     try {
-      const { error } = await supabase
-        .from('prenotazioni')
-        .update({
-          data_servizio: prenotazione.data_servizio,
-          ora_inizio: prenotazione.ora_inizio,
-          numero_persone: prenotazione.numero_persone,
-          stato: prenotazione.stato,
-          stato_pagamento: prenotazione.stato_pagamento,
-          caparra_ricevuta: prenotazione.caparra_ricevuta,
-          saldo_ricevuto: prenotazione.saldo_ricevuto,
-          metodo_pagamento: prenotazione.metodo_pagamento,
-          metodo_pagamento_caparra: prenotazione.metodo_pagamento_caparra,
-          metodo_pagamento_saldo: prenotazione.metodo_pagamento_saldo,
-          note_cliente: prenotazione.note_cliente,
-          note_interne: prenotazione.note_interne,
-          lingua: prenotazione.lingua
-        })
-        .eq('id', params.id)
+      const updateBody = {
+        data_servizio: prenotazione.data_servizio,
+        ora_inizio: prenotazione.ora_inizio,
+        numero_persone: prenotazione.numero_persone,
+        stato: prenotazione.stato,
+        stato_pagamento: prenotazione.stato_pagamento,
+        caparra_ricevuta: prenotazione.caparra_ricevuta,
+        saldo_ricevuto: prenotazione.saldo_ricevuto,
+        metodo_pagamento: prenotazione.metodo_pagamento,
+        metodo_pagamento_caparra: prenotazione.metodo_pagamento_caparra,
+        metodo_pagamento_saldo: prenotazione.metodo_pagamento_saldo,
+        note_cliente: prenotazione.note_cliente,
+        note_interne: prenotazione.note_interne,
+        lingua: prenotazione.lingua,
+      }
 
-      if (error) throw error
+      const res = await authFetch(`/api/prenotazioni/${params.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(updateBody),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Errore aggiornamento')
+      }
 
       toast.success('Prenotazione aggiornata!')
       setEditing(false)
       loadPrenotazione()
     } catch (error: any) {
       console.error('Errore:', error)
-      toast.error('Errore nel salvataggio')
+      toast.error(error.message || 'Errore nel salvataggio')
     }
   }
 
@@ -97,7 +100,9 @@ export default function PrenotazioneDettaglioPage() {
     }
 
     try {
-      // Crea transazione
+      // ── INSERT log_pagamenti ──
+      // TODO: log_pagamenti non è ancora migrato ad API. Resta su supabase client
+      //       finché non creiamo /api/log-pagamenti in una PR successiva.
       const { error: transazioneError } = await supabase
         .from('log_pagamenti')
         .insert({
@@ -108,12 +113,11 @@ export default function PrenotazioneDettaglioPage() {
           stato: 'completato',
           note: nuovoPagamento.note
         })
-
       if (transazioneError) throw transazioneError
 
-      // Aggiorna prenotazione
+      // ── Costruisci patch per prenotazione ──
       const nuoviValori: any = {}
-      
+
       if (nuovoPagamento.tipo === 'caparra') {
         nuoviValori.caparra_ricevuta = (prenotazione.caparra_ricevuta || 0) + parseFloat(nuovoPagamento.importo.toString())
         nuoviValori.metodo_pagamento_caparra = nuovoPagamento.metodo
@@ -124,8 +128,8 @@ export default function PrenotazioneDettaglioPage() {
         nuoviValori.data_pagamento_saldo = nuovoPagamento.data
       }
 
-      // Calcola nuovo stato pagamento
-      const totaleRicevuto = 
+      // Calcola nuovo stato_pagamento
+      const totaleRicevuto =
         (nuovoPagamento.tipo === 'caparra' ? nuoviValori.caparra_ricevuta : prenotazione.caparra_ricevuta || 0) +
         (nuovoPagamento.tipo === 'saldo' ? nuoviValori.saldo_ricevuto : prenotazione.saldo_ricevuto || 0)
 
@@ -135,12 +139,15 @@ export default function PrenotazioneDettaglioPage() {
         nuoviValori.stato_pagamento = 'parzialmente_pagato'
       }
 
-      const { error: updateError } = await supabase
-        .from('prenotazioni')
-        .update(nuoviValori)
-        .eq('id', params.id)
-
-      if (updateError) throw updateError
+      // ── UPDATE prenotazione via API ──
+      const res = await authFetch(`/api/prenotazioni/${params.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(nuoviValori),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Errore aggiornamento prenotazione')
+      }
 
       toast.success('Pagamento registrato!')
       setShowPagamentiModal(false)
@@ -154,7 +161,7 @@ export default function PrenotazioneDettaglioPage() {
       loadPrenotazione()
     } catch (error: any) {
       console.error('Errore:', error)
-      toast.error('Errore nel registrare il pagamento')
+      toast.error(error.message || 'Errore nel registrare il pagamento')
     }
   }
 
@@ -183,7 +190,7 @@ export default function PrenotazioneDettaglioPage() {
       <div className="mb-8 flex items-center justify-between">
         <div>
           <button
-            onClick={() => router.push('/backoffice/prenotazioni')}
+            onClick={() => router.push('/dashboard/prenotazioni')}
             className="text-blue-600 hover:text-blue-700 mb-2 flex items-center gap-2"
           >
             ← Torna alle prenotazioni
@@ -463,7 +470,7 @@ export default function PrenotazioneDettaglioPage() {
           {/* Metodi Pagamento */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h2 className="text-lg font-bold text-gray-900 mb-4">💳 Metodi Pagamento</h2>
-            
+
             {editing ? (
               <div className="space-y-3">
                 <div>

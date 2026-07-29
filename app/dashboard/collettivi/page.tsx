@@ -19,13 +19,23 @@ const NS3000_TO_BA_MAP: Record<string, string> = {
   '2edce19e-3687-42b9-bb87-57e2aabfccd2': 'b2a20895-eeab-493d-a2fb-53ef5ba1d220',
   '937298ab-2a15-4ace-adb2-b63dd1b865b1': '4c4f4b54-4ee6-481f-94f9-a142b5d651b0',
   '6800721d-a8e9-4217-b7a2-8548359c6cfc': '9a6cc58f-bb70-440e-92a1-d2e2c2712e5b',
-  'c35aefd0-6721-4f01-aeec-2d47bdf9f24f': '2d4995ec-35b3-4358-ace1-54621a9528ed',
+  'c35aefd0-6721-4f01-aeec-2d47bdf9f24f': 'e27ce151-0cd0-444e-b5f9-040b09859377',  // Mito 45 (ex Cab Dorado NS3000)
+  '0e705ad6-bcaf-445f-b640-2c4b0a9166ff': '2d4995ec-35b3-4358-ace1-54621a9528ed',  // 12 - Domar F8 (nuova NS3000)
   'fe759df8-5d8e-401f-8fb2-dfaa3642c33c': '51231c4f-b929-466c-aed3-9440639e0bd7',
   'd5bff230-0e6a-4211-b0ce-342e8fbace51': '8d4d1bd6-142f-4d0f-8854-333742eeeba3',
   '1365d4d3-0ffb-48a8-a8a6-d3c49dd22145': 'a079598f-b25d-49d6-90ce-b25146687a31',
+  '02ffd51e-da3f-45fa-b2a5-92acc254e2a6': 'd8262b01-07d0-4795-ba31-e64c6eaf6f0f', // 18 - ITALYURE 37 (Salerno)
+  '3b967967-d7de-48bb-9f03-5e779aa15a27': '43d0b751-da8d-4181-aabc-ba3b217142bc', // 19 - ITALYURE 37 (Masuccio)
 }
 
 const NS3000_BA_IDS = Object.values(NS3000_TO_BA_MAP)
+// ⭐ 2026-05-11 — Mappa inversa servizi: serve per popolare servizio_id BA
+// quando si crea una booking NS3000 dalla pagina collettivi, così il record BA
+// risulta correttamente associato al servizio locale.
+const NS3000_TO_BA_SERVICE_MAP: Record<string, string> = {
+  'ee21f2a6-51e2-483c-97b9-e45da67be9fb': 'ad5bf90a-14f1-4211-851a-a6bcb4900f5f', // Amalfi-Positano Collettivo FD
+  '9799c07d-d9bb-490a-8ba1-df9481396ec8': '4357c28f-a028-4f8f-8a0f-8a9c0c5a5526', // Capri Collettivo FD
+}
 
 // ─────────────────────────────────────────────
 // TIPI
@@ -584,6 +594,15 @@ export default function TourCollettivi() {
             metodo_pagamento: newBooking.metodo_pagamento, lingua: newBooking.lingua,
             porto_imbarco: newBooking.porto_imbarco || null, ora_imbarco: newBooking.ora_imbarco || null,
             booking_type: 'collective',
+            // ⭐ 2026-05-11 — Fix visibilità in /prenotazioni:
+            // - ba_imbarcazione_id: serve al proxy per creare record locale BA
+            // - servizio_id: mappato dal servizio NS3000 al corrispondente BA
+            // - dati pagamento: tracciati anche su BA per rendiconti
+            ba_imbarcazione_id: NS3000_TO_BA_MAP[newBooking.ns3000_boat_id] || null,
+            servizio_id: NS3000_TO_BA_SERVICE_MAP[newBooking.ns3000_service_id] || null,
+            caparra_ricevuta: newBooking.caparra_ricevuta || 0,
+            saldo_ricevuto: newBooking.saldo_ricevuto || 0,
+            stato: newBooking.stato,
           })
         })
         const result = await res.json()

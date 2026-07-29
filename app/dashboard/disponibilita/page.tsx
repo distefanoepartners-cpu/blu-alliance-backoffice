@@ -22,7 +22,8 @@ const ns3000ToBaMap: Record<string, string> = {
   '180dd752-b2b4-4318-beed-8bc15b3877c2': '557ecf08-2e88-4914-a1d9-da5ec5bf5845',
   '8c1b5b3d-d4a2-441c-8f8e-71b88ff6c966': '07673392-e08c-4d53-a128-e9d6c405917d',
   '42d4c904-f2e1-4436-931b-3e7b651bd7a6': '2f4f1a71-5037-4fb0-bbd1-ef6c6acf8dc5',
-  'c35aefd0-6721-4f01-aeec-2d47bdf9f24f': '2d4995ec-35b3-4358-ace1-54621a9528ed',
+  'c35aefd0-6721-4f01-aeec-2d47bdf9f24f': 'e27ce151-0cd0-444e-b5f9-040b09859377',  // Mito 45 (ex Cab Dorado NS3000)
+  '0e705ad6-bcaf-445f-b640-2c4b0a9166ff': '2d4995ec-35b3-4358-ace1-54621a9528ed', // 12 - Domar F8 (nuova NS3000)
   'fe759df8-5d8e-401f-8fb2-dfaa3642c33c': '51231c4f-b929-466c-aed3-9440639e0bd7',
   'd5bff230-0e6a-4211-b0ce-342e8fbace51': '8d4d1bd6-142f-4d0f-8854-333742eeeba3',
   '636cb5d4-1316-4382-90db-fa6c16deb1f4': '31d0ac07-57a9-472d-b07a-f9a26b2ba89e',
@@ -252,12 +253,38 @@ export default function PlanningMensile() {
     if (isNs3000) {
       const ns3000BoatId = baToNs3000Map[imbarcazioneId]
       if (ns3000BoatId) {
-        const booking = ns3000Bookings.find(b => {
+        // ⭐ 2026-05-11 — Distingui tra booking privata e collettiva
+        const bookingsDelGiorno = ns3000Bookings.filter(b => {
           if (b.boat_id !== ns3000BoatId) return false
           const end = b.booking_end_date || b.booking_date
           return dateStr >= b.booking_date && dateStr <= end
         })
-        if (booking) return { type: 'ns3000_booking', data: booking }
+
+        if (bookingsDelGiorno.length > 0) {
+          // Se c'è una booking PRIVATA → barca bloccata
+          const privata = bookingsDelGiorno.find(b =>
+            (b.booking_type || b.service_type) !== 'collective'
+          )
+          if (privata) return { type: 'ns3000_booking', data: privata }
+
+          // Solo collettive → calcola posti liberi
+          const collettivi = bookingsDelGiorno.filter(b =>
+            (b.booking_type || b.service_type) === 'collective'
+          )
+          const paxOccupati = collettivi.reduce((sum, b) => sum + (b.num_passengers || 0), 0)
+          const barca = imbarcazioni.find(b => b.id === imbarcazioneId)
+          const capienza = barca?.capacita_massima || 0
+          const liberi = Math.max(0, capienza - paxOccupati)
+          return {
+            type: 'collettivo',
+            data: {
+              posti_occupati: paxOccupati,
+              posti_liberi: liberi,
+              capienza,
+              ns3000_bookings: collettivi,
+            }
+          }
+        }
       }
       const avail = ns3000Availability[imbarcazioneId]?.[dateStr]
       if (avail && !avail.available && !avail.slots?.morning && !avail.slots?.afternoon)
@@ -267,8 +294,19 @@ export default function PlanningMensile() {
       return { type: 'disponibile' }
     }
 
-    const pren = prenotazioni.find(p => p.imbarcazione_id === imbarcazioneId && p.data_servizio === dateStr)
-    if (pren) return { type: 'prenotazione', data: pren }
+    const prenDelGiorno = prenotazioni.filter(p => p.imbarcazione_id === imbarcazioneId && p.data_servizio === dateStr)
+    if (prenDelGiorno.length > 0) {
+      const postoEsternoColl = postiEsterni.find(p => p.imbarcazione_id === imbarcazioneId && p.data === dateStr && p.posti_occupati > 0)
+      const paxEsterni = postoEsternoColl?.posti_occupati || 0
+      const isCollettivo = prenDelGiorno.length > 1 || prenDelGiorno.some(p => p.tipo_tour === 'collettivo') || paxEsterni > 0
+      if (isCollettivo) {
+        const totalePax = prenDelGiorno.reduce((s, p) => s + (p.numero_persone || 0), 0) + paxEsterni
+        const barcaColl = imbarcazioni.find(b => b.id === imbarcazioneId)
+        const capienzaColl = barcaColl?.capacita_massima || 0
+        return { type: 'collettivo', data: { posti_occupati: totalePax, posti_liberi: Math.max(0, capienzaColl - totalePax), capienza: capienzaColl, prenotazioni: prenDelGiorno } }
+      }
+      return { type: 'prenotazione', data: prenDelGiorno[0] }
+    }
     const blocco = blocchi.find(b => {
       if (b.imbarcazione_id !== imbarcazioneId) return false
       return date >= parseISO(b.data_inizio) && date <= parseISO(b.data_fine)
