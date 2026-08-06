@@ -11,12 +11,14 @@ import BookingModal from '@/components/BookingModal'
 export default function PrenotazioniPage() {
   const router = useRouter()
   const [prenotazioni, setPrenotazioni] = useState<any[]>([])
-  const [statistiche, setStatistiche] = useState<any>(null)
+  const [filtroPeriodo, setFiltroPeriodo] = useState<'oggi' | 'mese' | 'data' | 'tutte'>('tutte')
+  const [dataFiltro, setDataFiltro] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [filtroStato, setFiltroStato] = useState<string>('tutte')
-  const [filtroPagamento, setFiltroPagamento] = useState<string>('tutti')
   const [filtroMetodo, setFiltroMetodo] = useState<string>('tutti')
   const [filtroAffiliato, setFiltroAffiliato] = useState<string>('tutti')
+  const [filtroFornitore, setFiltroFornitore] = useState<string>('tutti')
+  const [fornitori, setFornitori] = useState<any[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [showEmailModal, setShowEmailModal] = useState(false)
@@ -37,42 +39,29 @@ export default function PrenotazioniPage() {
     try {
       setLoading(true)
 
-      // Carica statistiche dalla view
-      const { data: statsData, error: statsError } = await supabase
-        .from('vista_statistiche_ricavi')
-        .select('*')
-        .single()
-
-      if (statsError && statsError.code !== 'PGRST116') {
-        console.error('Errore statistiche:', statsError)
-      }
-
       // Carica prenotazioni con dettagli
       const { data: prenotazioniData, error: prenotazioniError } = await supabase
         .from('prenotazioni')
         .select(`
           *,
-          clienti(nome, cognome, email, telefono),
+          clienti(nome, cognome, email, telefono, nazione, tipo_documento, numero_documento, scadenza_documento, patente_nautica, scadenza_patente_nautica),
           servizi(nome, tipo),
-          imbarcazioni(nome, tipo, categoria)
+          imbarcazioni(nome, tipo, categoria, fornitore_id)
         `)
         .order('data_servizio', { ascending: false })
         .order('ora_inizio', { ascending: true })
 
       if (prenotazioniError) throw prenotazioniError
 
-      setStatistiche(statsData || {
-        ricavi_oggi: 0,
-        ricavi_settimana: 0,
-        ricavi_mese: 0,
-        totale_incassato: 0,
-        totale_da_incassare: 0,
-        totale_prenotazioni: 0,
-        prenotazioni_confermate: 0,
-        prenotazioni_pagate: 0
-      })
-      
       setPrenotazioni(prenotazioniData || [])
+
+      // Carica fornitori attivi per il filtro
+      const { data: fornitoriData } = await supabase
+        .from('fornitori')
+        .select('id, ragione_sociale')
+        .eq('attivo', true)
+        .order('ragione_sociale')
+      setFornitori(fornitoriData || [])
     } catch (error: any) {
       console.error('Errore:', error)
       toast.error('Errore nel caricamento')
@@ -81,12 +70,20 @@ export default function PrenotazioniPage() {
     }
   }
 
+  // Helper per il filtro periodo
+  const oggiStr = new Date().toISOString().slice(0, 10)
+  const meseCorrente = new Date().toISOString().slice(0, 7)
+
   const prenotazioniFiltrate = prenotazioni.filter(p => {
+    // Filtro periodo (sulla data del servizio)
+    if (filtroPeriodo === 'oggi' && p.data_servizio !== oggiStr) return false
+    if (filtroPeriodo === 'mese' && !(p.data_servizio || '').startsWith(meseCorrente)) return false
+    if (filtroPeriodo === 'data' && dataFiltro && p.data_servizio !== dataFiltro) return false
+
     // Filtro stato
     if (filtroStato !== 'tutte' && p.stato !== filtroStato) return false
     
     // Filtro pagamento
-    if (filtroPagamento !== 'tutti' && p.stato_pagamento !== filtroPagamento) return false
     
     // Filtro metodo pagamento
     if (filtroMetodo !== 'tutti') {
@@ -97,7 +94,8 @@ export default function PrenotazioniPage() {
     // Filtro affiliato
     if (filtroAffiliato === 'affiliato' && !p.ref_affiliato) return false
     if (filtroAffiliato === 'diretto' && p.ref_affiliato) return false
-    
+    if (filtroFornitore !== 'tutti' && p.imbarcazioni?.fornitore_id !== filtroFornitore) return false
+
     // Search
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase()
@@ -111,6 +109,17 @@ export default function PrenotazioniPage() {
     
     return true
   })
+
+  // ⭐ 4 metriche operative, calcolate sulle prenotazioni filtrate (escl. cancellate/annullate)
+  const metriche = (() => {
+    const valide = prenotazioniFiltrate.filter(p => p.stato !== 'cancellata' && p.stato !== 'annullata')
+    return {
+      numPrenotazioni: valide.length,
+      numPax: valide.reduce((sum, p) => sum + (p.numero_persone || 0), 0),
+      totaleFatturato: valide.reduce((sum, p) => sum + (p.prezzo_totale || 0), 0),
+      numBarche: new Set(valide.map(p => p.imbarcazione_id || p.ns3000_boat_name).filter(Boolean)).size,
+    }
+  })()
 
   function handleEdit(prenotazione: any) {
     setEditingPrenotazione(prenotazione)
@@ -309,160 +318,57 @@ export default function PrenotazioniPage() {
         </button>
       </div>
 
-      {/* Statistiche Ricavi */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Statistiche Ricavi</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {/* Ricavi Oggi */}
-          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white shadow-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl">💰</span>
-              <span className="text-xs opacity-80">Oggi</span>
-            </div>
-            <div className="text-2xl font-bold">
-              €{(statistiche?.ricavi_oggi || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-xs opacity-80 mt-1">Ricavi Oggi</div>
-          </div>
-
-          {/* Ricavi Settimana */}
-          <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-4 text-white shadow-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl">📊</span>
-              <span className="text-xs opacity-80">7 giorni</span>
-            </div>
-            <div className="text-2xl font-bold">
-              €{(statistiche?.ricavi_settimana || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-xs opacity-80 mt-1">Ricavi Settimana</div>
-          </div>
-
-          {/* Ricavi Mese */}
-          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white shadow-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl">📈</span>
-              <span className="text-xs opacity-80">30 giorni</span>
-            </div>
-            <div className="text-2xl font-bold">
-              €{(statistiche?.ricavi_mese || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-xs opacity-80 mt-1">Ricavi Mese</div>
-          </div>
-
-          {/* Totale Incassato */}
-          <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl p-4 text-white shadow-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl">✅</span>
-              <span className="text-xs opacity-80">Incassato</span>
-            </div>
-            <div className="text-2xl font-bold">
-              €{(statistiche?.totale_incassato || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-xs opacity-80 mt-1">Totale Incassato</div>
-          </div>
-
-          {/* Da Incassare */}
-          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl p-4 text-white shadow-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl">⏳</span>
-              <span className="text-xs opacity-80">Pending</span>
-            </div>
-            <div className="text-2xl font-bold">
-              €{(statistiche?.totale_da_incassare || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-xs opacity-80 mt-1">Da Incassare</div>
-          </div>
-
-          {/* Prenotazioni */}
-          <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl p-4 text-white shadow-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl">📋</span>
-              <span className="text-xs opacity-80">Totali</span>
-            </div>
-            <div className="text-2xl font-bold">
-              {statistiche?.totale_prenotazioni || 0}
-            </div>
-            <div className="text-xs opacity-80 mt-1">Prenotazioni</div>
+      {/* ⭐ Metriche operative */}
+      <div className="mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Riepilogo</h2>
+          {/* Filtro periodo */}
+          <div className="flex flex-wrap items-center gap-2">
+            {([
+              { key: 'oggi', label: 'Oggi' },
+              { key: 'mese', label: 'Questo mese' },
+              { key: 'data', label: 'Per data' },
+              { key: 'tutte', label: 'Totale' },
+            ] as const).map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => setFiltroPeriodo(opt.key)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  filtroPeriodo === opt.key
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+            {filtroPeriodo === 'data' && (
+              <input
+                type="date"
+                value={dataFiltro}
+                onChange={(e) => setDataFiltro(e.target.value)}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+              />
+            )}
           </div>
         </div>
-      </div>
 
-      {/* Incassi per Metodo */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Incassi per Metodo</h2>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-            <div className="text-2xl mb-1">💳</div>
-            <div className="text-2xl font-bold text-blue-600">
-              €{incassiPerMetodo.stripe.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-xs text-blue-700 mt-1">Stripe</div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-sm">
+            <div className="text-3xl font-bold">{metriche.numPrenotazioni}</div>
+            <div className="text-sm text-blue-100 mt-1">N° Prenotazioni</div>
           </div>
-
-          <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-            <div className="text-2xl mb-1">💵</div>
-            <div className="text-2xl font-bold text-green-600">
-              €{incassiPerMetodo.contanti.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-xs text-green-700 mt-1">Contanti</div>
+          <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl p-5 text-white shadow-sm">
+            <div className="text-3xl font-bold">{metriche.numPax}</div>
+            <div className="text-sm text-teal-100 mt-1">N° Passeggeri</div>
           </div>
-
-          <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
-            <div className="text-2xl mb-1">💳</div>
-            <div className="text-2xl font-bold text-purple-600">
-              €{incassiPerMetodo.pos.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-xs text-purple-700 mt-1">POS</div>
+          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl p-5 text-white shadow-sm">
+            <div className="text-3xl font-bold">€{metriche.totaleFatturato.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+            <div className="text-sm text-emerald-100 mt-1">Totale Fatturato</div>
           </div>
-
-          <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
-            <div className="text-2xl mb-1">🏦</div>
-            <div className="text-2xl font-bold text-orange-600">
-              €{incassiPerMetodo.bonifico.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-xs text-orange-700 mt-1">Bonifico</div>
-          </div>
-
-          <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-            <div className="text-2xl mb-1">⚠️</div>
-            <div className="text-2xl font-bold text-red-600">
-              {incassiPerMetodo.nonImpostato}
-            </div>
-            <div className="text-xs text-red-700 mt-1">Non Impostato</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Stato Prenotazioni */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Stato Prenotazioni</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
-            <div className="text-3xl font-bold text-yellow-600">
-              {prenotazioni.filter(p => p.stato === 'in_attesa').length}
-            </div>
-            <div className="text-sm text-yellow-700 mt-1">In Attesa</div>
-          </div>
-
-          <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-            <div className="text-3xl font-bold text-green-600">
-              {prenotazioni.filter(p => p.stato === 'confermata').length}
-            </div>
-            <div className="text-sm text-green-700 mt-1">Confermate</div>
-          </div>
-
-          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-            <div className="text-3xl font-bold text-blue-600">
-              {prenotazioni.filter(p => p.stato === 'completata').length}
-            </div>
-            <div className="text-sm text-blue-700 mt-1">Completate</div>
-          </div>
-
-          <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-            <div className="text-3xl font-bold text-red-600">
-              {prenotazioni.filter(p => p.stato === 'cancellata').length}
-            </div>
-            <div className="text-sm text-red-700 mt-1">Cancellate</div>
+          <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl p-5 text-white shadow-sm">
+            <div className="text-3xl font-bold">{metriche.numBarche}</div>
+            <div className="text-sm text-indigo-100 mt-1">Barche Impegnate</div>
           </div>
         </div>
       </div>
@@ -498,20 +404,18 @@ export default function PrenotazioniPage() {
             </select>
           </div>
 
-          {/* Pagamento */}
+          {/* Fornitore */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Stato Pagamento</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Fornitore</label>
             <select
-              value={filtroPagamento}
-              onChange={(e) => setFiltroPagamento(e.target.value)}
+              value={filtroFornitore}
+              onChange={(e) => setFiltroFornitore(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             >
               <option value="tutti">Tutti</option>
-              <option value="non_pagato">Non Pagato</option>
-              <option value="caparra_pagata">Caparra Pagata</option>
-              <option value="acconto_ricevuto">Acconto Ricevuto</option>
-              <option value="parzialmente_pagato">Parzialmente Pagato</option>
-              <option value="pagato">Pagato</option>
+              {fornitori.map((f) => (
+                <option key={f.id} value={f.id}>{f.ragione_sociale}</option>
+              ))}
             </select>
           </div>
 
