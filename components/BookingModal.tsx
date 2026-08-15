@@ -1249,6 +1249,52 @@ export default function BookingModal({
         {/* Footer */}
         <div className="flex gap-2 md:gap-3 p-3 md:p-4 border-t bg-gray-50 rounded-b-xl flex-shrink-0">
           <button type="button" onClick={onClose} className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-white text-sm" disabled={saving}>Annulla</button>
+          {isEdit && formData.stato === 'confermata' && (
+            <button
+              type="button"
+              disabled={saving || sendingReview}
+              onClick={async () => {
+                setSendingReview(true)
+                try {
+                  // 1. Completa la prenotazione (update mirato dello stato)
+                  const resStato = await authFetch('/api/prenotazioni/' + prenotazione.id, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stato: 'completata' }),
+                  })
+                  if (!resStato.ok) {
+                    const d = await resStato.json().catch(() => ({}))
+                    throw new Error(d.error || 'Errore nel completare la prenotazione')
+                  }
+                  setFormData(prev => ({ ...prev, stato: 'completata' }))
+
+                  // 2. Invia la richiesta di recensione
+                  const resRev = await authFetch('/api/prenotazioni/' + prenotazione.id + '/send-google-review', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}),
+                  })
+                  const dataRev = await resRev.json()
+                  if (resRev.ok) {
+                    toast.success('🏁 Completata + ⭐ recensione inviata')
+                    setReviewSentAt(new Date().toISOString())
+                    if (typeof onSave === 'function') onSave()
+                  } else {
+                    toast.error('Prenotazione completata, ma recensione non inviata: ' + (dataRev.error || 'errore'))
+                  }
+                } catch (e: any) {
+                  toast.error(e.message || 'Errore operazione')
+                } finally {
+                  setSendingReview(false)
+                }
+              }}
+              className="px-4 py-2.5 border border-blue-500 text-white bg-blue-600 rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50"
+              title="Completa la prenotazione e invia subito la richiesta di recensione"
+            >
+              {sendingReview ? 'Invio...' : '🏁 Completa e invia recensione'}
+            </button>
+          )}
+
           {isEdit && formData.stato === 'completata' && (
             <div className="flex flex-col items-stretch">
               <button
