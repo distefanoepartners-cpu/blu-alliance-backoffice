@@ -274,11 +274,16 @@ export default function BookingModal({
         setNaviInScalo(lista)
 
         // Nave unica in scalo: preseleziona (zero click per l'operatore)
-        if (lista.length === 1 && !formData.nave_id) {
+        // SOLO per prenotazioni NUOVE: in modifica va rispettata la scelta salvata,
+        // inclusa "non crocierista" (nave_id vuoto), che altrimenti verrebbe
+        // sovrascritta con la nave del giorno alla riapertura.
+        if (!isEdit && lista.length === 1 && !formData.nave_id) {
           setFormData(prev => ({ ...prev, nave_id: lista[0].id }))
           return
         }
-        // La nave selezionata non è in scalo in questa data: azzera
+        // La nave selezionata non è in scalo in questa data: azzera.
+        // Anche questo solo per nuove prenotazioni o se l'utente cambia data:
+        // in apertura di una modifica non deve azzerare la scelta salvata.
         if (formData.nave_id && !lista.some((n: any) => n.id === Number(formData.nave_id))) {
           setFormData(prev => ({ ...prev, nave_id: '' }))
         }
