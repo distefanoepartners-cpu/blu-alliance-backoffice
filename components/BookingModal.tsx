@@ -138,7 +138,43 @@ export default function BookingModal({
   const [saving, setSaving] = useState(false)
   const daRicevere = Math.max(0, (formData.prezzo_totale || 0) - (formData.caparra_ricevuta || 0) - (formData.saldo_ricevuto || 0) - (formData.payment_lines || []).reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0))
 
+  // ⭐ REGIME FORFETTARIO: se la barca appartiene a un fornitore forfettario,
+  // il socio incassa direttamente dal cliente e BA fattura solo la commissione.
+  // Il fornitore si ricava dalla barca locale (imbarcazioni.fornitore_id) o dal
+  // fornitore_id diretto (barche esterne/ns3000).
+  const fornitoreCorrente = (() => {
+    // barca locale → fornitore della barca
+    if (formData.imbarcazione_id) {
+      const barca = imbarcazioni.find(i => i.id === formData.imbarcazione_id)
+      if (barca?.fornitore_id) return fornitori.find(f => f.id === barca.fornitore_id)
+    }
+    // fornitore_id diretto (esterna/ns3000)
+    if (formData.fornitore_id) return fornitori.find(f => f.id === formData.fornitore_id)
+    return null
+  })()
+  const isForfettario = !!fornitoreCorrente?.forfettario
+  const commissionePerc = fornitoreCorrente?.percentuale_commissione != null
+    ? Number(fornitoreCorrente.percentuale_commissione)
+    : 18
+  const commissioneForfettaria = isForfettario
+    ? Math.round((formData.prezzo_totale || 0) * commissionePerc) / 100
+    : 0
+
+
   useEffect(() => { if (isOpen) loadOptions() }, [isOpen])
+
+  // ⭐ Forfettario: azzera i campi di pagamento cliente (BA non incassa dal cliente,
+  // il socio incassa direttamente). Il prezzo_totale resta come base per la commissione.
+  useEffect(() => {
+    if (isForfettario) {
+      setFormData(prev => {
+        if ((prev.caparra_ricevuta || 0) === 0 && (prev.saldo_ricevuto || 0) === 0 && (!prev.payment_lines || prev.payment_lines.length === 0) && prev.metodo_pagamento === 'forfettario') {
+          return prev // già normalizzato, evita loop
+        }
+        return { ...prev, caparra_ricevuta: 0, saldo_ricevuto: 0, payment_lines: [], metodo_pagamento: 'forfettario' }
+      })
+    }
+  }, [isForfettario])
 
   useEffect(() => {
     if (isOpen && prenotazione) {
@@ -235,7 +271,7 @@ export default function BookingModal({
         supabase.from('servizi').select('id, nome, tipo').eq('attivo', true).order('nome'),
        supabase.from('imbarcazioni').select('id, nome, tipo, categoria, fornitore_id, minimo_pax_collettivo').eq('attiva', true).order('nome'),
         supabase.from('vista_imbarcazioni_servizi_con_prezzi').select('imbarcazione_id, servizio_id, servizio_tipo, prezzo_finale'),
-        supabase.from('fornitori').select('id, ragione_sociale, percentuale_commissione').eq('attivo', true).order('ragione_sociale')
+        supabase.from('fornitori').select('id, ragione_sociale, percentuale_commissione, forfettario').eq('attivo', true).order('ragione_sociale')
       ])
       setFornitori(fornitoriRes.data || [])
       setServizi(serviziRes.data || [])
@@ -1119,6 +1155,19 @@ export default function BookingModal({
                 {/* ── PREZZI E PAGAMENTI ── */}
                 <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
                   <h3 className="font-semibold text-gray-900 mb-3 text-sm">💰 Prezzi e Pagamenti</h3>
+                  {isForfettario && (
+                    <div className="mb-3 bg-amber-50 border border-amber-300 rounded-lg p-3">
+                      <div className="text-amber-700 font-semibold text-sm mb-1">📋 Regime forfettario — {fornitoreCorrente?.ragione_sociale}</div>
+                      <p className="text-xs text-gray-700 mb-2">
+                        Il socio fattura e incassa direttamente dal cliente. Blu Alliance non incassa dal cliente: fattura al socio solo la commissione.
+                      </p>
+                      <div className="flex items-baseline justify-between bg-white rounded px-3 py-2 border border-amber-200">
+                        <span className="text-sm text-gray-600">Commissione BA ({commissionePerc}%) su €{(formData.prezzo_totale || 0).toFixed(2)}</span>
+                        <span className="text-lg font-bold text-amber-700">€{commissioneForfettaria.toFixed(2)}</span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-1">Da fatturare a {fornitoreCorrente?.ragione_sociale} come incasso Blu Alliance.</p>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-3 mb-3">
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Prezzo Totale (€) *</label>
@@ -1126,6 +1175,7 @@ export default function BookingModal({
                         onChange={(e) => setFormData(prev => ({ ...prev, prezzo_totale: parseFloat(e.target.value) || 0 }))}
                         onFocus={(e) => e.target.select()} className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm h-[34px] font-semibold" />
                     </div>
+                    {!isForfettario && (
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Metodo Pagamento *</label>
                       <select value={formData.metodo_pagamento} onChange={(e) => setFormData(prev => ({ ...prev, metodo_pagamento: e.target.value }))}
@@ -1135,7 +1185,9 @@ export default function BookingModal({
                         <option value="pos">💳 POS</option><option value="bonifico">🏦 Bonifico</option><option value="altro">📋 Altro</option>
                       </select>
                     </div>
+                    )}
                   </div>
+                  {!isForfettario && (<>
                   <div className="grid grid-cols-2 gap-3 mb-3">
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Caparra Ricevuta (€)</label>
@@ -1223,6 +1275,7 @@ export default function BookingModal({
                       <span className={`text-lg font-bold ${daRicevere > 0 ? 'text-red-600' : 'text-green-600'}`}>€{daRicevere.toFixed(2)}</span>
                     </div>
                   </div>
+                  </>)}
                 </div>
 
                 {/* ── NOTE ── */}

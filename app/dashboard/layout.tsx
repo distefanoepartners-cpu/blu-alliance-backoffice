@@ -80,6 +80,7 @@ function DashboardLayoutContent({
     { href: '/dashboard/budget-navi', label: 'Budget Navi', icon: BarChart3, roles: ['admin'] },
     { href: '/dashboard/contabilita/movimenti', label: 'Movimenti Contabili', icon: DollarSign, roles: ['admin'] },
     { href: '/dashboard/contabilita/estratti-conto', label: 'Estratti Conto Soci', icon: FileSpreadsheet, roles: ['admin'] },
+    { href: '/dashboard/commissioni-forfettari', label: 'Commissioni Forfettari', icon: DollarSign, roles: ['admin', 'manager'] },
     { href: '/dashboard/contabilita/importa-sumup', label: 'Importa SumUp', icon: Upload, roles: ['admin'] },
     { href: '/dashboard/contabilita/bilancio', label: 'Bilancio Provvisorio', icon: FileSpreadsheet, roles: ['admin'] },
    ]
