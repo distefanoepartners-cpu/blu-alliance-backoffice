@@ -44,7 +44,7 @@ export default function PrenotazioniPage() {
         .from('prenotazioni')
         .select(`
           *,
-          clienti(nome, cognome, email, telefono, nazione, tipo_documento, numero_documento, scadenza_documento, patente_nautica, scadenza_patente_nautica),
+          clienti(nome, cognome, email, telefono),
           servizi(nome, tipo),
           imbarcazioni(nome, tipo, categoria, fornitore_id)
         `)
