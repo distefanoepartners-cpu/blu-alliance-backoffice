@@ -119,7 +119,7 @@ export default function PrenotazioniPage() {
         // Per i forfettari il fatturato BA è la commissione, non il prezzo pieno
         const fornId = p.imbarcazioni?.fornitore_id || p.fornitore_id
         const forn = fornId ? fornitori.find(f => f.id === fornId) : null
-        if (forn?.forfettario) {
+        if (forn?.forfettario && (p.data_servizio || '') >= '2026-08-01') {
           const perc = Number(forn.percentuale_commissione) || 18
           return sum + Math.round((Number(p.prezzo_totale) || 0) * perc) / 100
         }
@@ -257,6 +257,10 @@ export default function PrenotazioniPage() {
     if (!fornId) return { isForfettario: false, commissione: 0, perc: 0, socioNome: '' }
     const forn = fornitori.find(f => f.id === fornId)
     if (!forn || !forn.forfettario) return { isForfettario: false, commissione: 0, perc: 0, socioNome: '' }
+    // ⭐ Il nuovo modello forfettario (BA fattura solo la commissione) vale solo
+    // dal 1/8/2026. Prima, BA incassava il pieno: comportamento invariato.
+    const dataServizio = prenotazione.data_servizio || ''
+    if (dataServizio < '2026-08-01') return { isForfettario: false, commissione: 0, perc: 0, socioNome: '' }
     const perc = Number(forn.percentuale_commissione) || 18
     const commissione = Math.round((Number(prenotazione.prezzo_totale) || 0) * perc) / 100
     return { isForfettario: true, commissione, perc, socioNome: forn.ragione_sociale }

@@ -152,7 +152,8 @@ export default function BookingModal({
     if (formData.fornitore_id) return fornitori.find(f => f.id === formData.fornitore_id)
     return null
   })()
-  const isForfettario = !!fornitoreCorrente?.forfettario
+  // Il regime forfettario "nuovo modello" (BA fattura solo commissione) vale dal 1/8/2026.
+  const isForfettario = !!fornitoreCorrente?.forfettario && (formData.data_servizio || '') >= '2026-08-01'
   const commissionePerc = fornitoreCorrente?.percentuale_commissione != null
     ? Number(fornitoreCorrente.percentuale_commissione)
     : 18

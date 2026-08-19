@@ -70,6 +70,7 @@ export default function CommissioniForfettariPage() {
         .select('id, codice_prenotazione, data_servizio, prezzo_totale, numero_persone, stato, imbarcazione_id, commissione_fatturata_socio, commissione_fatturata_data, servizi(nome)')
         .in('imbarcazione_id', barcheIds)
         .in('stato', ['confermata', 'completata'])
+        .gte('data_servizio', '2026-08-01')
         .order('data_servizio', { ascending: false })
 
       if (meseFiltro) {
