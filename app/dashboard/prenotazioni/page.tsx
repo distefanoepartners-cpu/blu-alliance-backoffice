@@ -44,7 +44,7 @@ export default function PrenotazioniPage() {
         .from('prenotazioni')
         .select(`
           *,
-          clienti(nome, cognome, email, telefono),
+          clienti(nome, cognome, email, telefono, nazione, tipo_documento, numero_documento, scadenza_documento, patente_nautica, scadenza_patente_nautica),
           servizi(nome, tipo),
           imbarcazioni(nome, tipo, categoria, fornitore_id)
         `)
@@ -58,8 +58,7 @@ export default function PrenotazioniPage() {
       // Carica fornitori attivi per il filtro
       const { data: fornitoriData } = await supabase
         .from('fornitori')
-        .select('id, ragione_sociale')
-        .eq('attivo', true)
+        .select('id, ragione_sociale, forfettario, percentuale_commissione, attivo')
         .order('ragione_sociale')
       setFornitori(fornitoriData || [])
     } catch (error: any) {
@@ -116,7 +115,16 @@ export default function PrenotazioniPage() {
     return {
       numPrenotazioni: valide.length,
       numPax: valide.reduce((sum, p) => sum + (p.numero_persone || 0), 0),
-      totaleFatturato: valide.reduce((sum, p) => sum + (p.prezzo_totale || 0), 0),
+      totaleFatturato: valide.reduce((sum, p) => {
+        // Per i forfettari il fatturato BA è la commissione, non il prezzo pieno
+        const fornId = p.imbarcazioni?.fornitore_id || p.fornitore_id
+        const forn = fornId ? fornitori.find(f => f.id === fornId) : null
+        if (forn?.forfettario) {
+          const perc = Number(forn.percentuale_commissione) || 18
+          return sum + Math.round((Number(p.prezzo_totale) || 0) * perc) / 100
+        }
+        return sum + (p.prezzo_totale || 0)
+      }, 0),
       numBarche: new Set(valide.map(p => p.imbarcazione_id || p.ns3000_boat_name).filter(Boolean)).size,
     }
   })()
@@ -240,6 +248,18 @@ export default function PrenotazioniPage() {
     } finally {
       setDeleting(false)
     }
+  }
+
+  // ⭐ Info regime forfettario per una prenotazione: se la barca è di un socio
+  // forfettario, BA incassa solo la commissione (non il prezzo pieno).
+  const getForfettarioInfo = (prenotazione: any) => {
+    const fornId = prenotazione.imbarcazioni?.fornitore_id || prenotazione.fornitore_id
+    if (!fornId) return { isForfettario: false, commissione: 0, perc: 0, socioNome: '' }
+    const forn = fornitori.find(f => f.id === fornId)
+    if (!forn || !forn.forfettario) return { isForfettario: false, commissione: 0, perc: 0, socioNome: '' }
+    const perc = Number(forn.percentuale_commissione) || 18
+    const commissione = Math.round((Number(prenotazione.prezzo_totale) || 0) * perc) / 100
+    return { isForfettario: true, commissione, perc, socioNome: forn.ragione_sociale }
   }
 
   const getStatoColor = (stato: string) => {
@@ -413,7 +433,7 @@ export default function PrenotazioniPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             >
               <option value="tutti">Tutti</option>
-              {fornitori.map((f) => (
+              {fornitori.filter((f) => f.attivo !== false).map((f) => (
                 <option key={f.id} value={f.id}>{f.ragione_sociale}</option>
               ))}
             </select>
@@ -524,25 +544,51 @@ export default function PrenotazioniPage() {
                   {/* Importo */}
                   <td className="px-4 py-4">
                     <div className="space-y-1">
-                      <div className="text-sm">
-                        <span className="text-gray-600">Totale: </span>
-                        <span className="font-bold text-gray-900">
-                          €{prenotazione.prezzo_totale?.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                      <div className="text-xs text-blue-600">
-                        Acconto: €{(prenotazione.caparra_ricevuta || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        Saldo: €{(prenotazione.saldo_ricevuto || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-                      </div>
-                      <div className="text-xs font-semibold text-red-600">
-                        Da ricevere: €{(
-                          (prenotazione.prezzo_totale || 0) - 
-                          (prenotazione.caparra_ricevuta || 0) - 
-                          (prenotazione.saldo_ricevuto || 0)
-                        ).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-                      </div>
+                      {(() => {
+                        const ff = getForfettarioInfo(prenotazione)
+                        if (ff.isForfettario) {
+                          return (
+                            <>
+                              <div className="text-xs text-amber-700 font-medium">📋 Forfettario ({ff.socioNome})</div>
+                              <div className="text-sm">
+                                <span className="text-gray-600">Tour: </span>
+                                <span className="text-gray-500">€{(prenotazione.prezzo_totale || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}</span>
+                                <span className="text-gray-400"> (incassato dal socio)</span>
+                              </div>
+                              <div className="text-sm">
+                                <span className="text-gray-600">Commissione BA ({ff.perc}%): </span>
+                                <span className="font-bold text-amber-700">€{ff.commissione.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="text-xs font-semibold text-red-600">
+                                Da ricevere: €{ff.commissione.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                              </div>
+                            </>
+                          )
+                        }
+                        return (
+                          <>
+                            <div className="text-sm">
+                              <span className="text-gray-600">Totale: </span>
+                              <span className="font-bold text-gray-900">
+                                €{prenotazione.prezzo_totale?.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div className="text-xs text-blue-600">
+                              Acconto: €{(prenotazione.caparra_ricevuta || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Saldo: €{(prenotazione.saldo_ricevuto || 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                            </div>
+                            <div className="text-xs font-semibold text-red-600">
+                              Da ricevere: €{(
+                                (prenotazione.prezzo_totale || 0) - 
+                                (prenotazione.caparra_ricevuta || 0) - 
+                                (prenotazione.saldo_ricevuto || 0)
+                              ).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                            </div>
+                          </>
+                        )
+                      })()}
                     </div>
                   </td>
 
