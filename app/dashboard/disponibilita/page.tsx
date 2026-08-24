@@ -24,6 +24,7 @@ const ns3000ToBaMap: Record<string, string> = {
   '42d4c904-f2e1-4436-931b-3e7b651bd7a6': '2f4f1a71-5037-4fb0-bbd1-ef6c6acf8dc5',
   'c35aefd0-6721-4f01-aeec-2d47bdf9f24f': 'e27ce151-0cd0-444e-b5f9-040b09859377',  // Mito 45 (ex Cab Dorado NS3000)
   '0e705ad6-bcaf-445f-b640-2c4b0a9166ff': '2d4995ec-35b3-4358-ace1-54621a9528ed', // 12 - Domar F8 (nuova NS3000)
+  '1e731610-2e9a-4a50-99d4-90f21488eb79': 'fb77e14d-9de5-479a-9051-beb4c4de9b09', // Conam 60 - Tolida
   'fe759df8-5d8e-401f-8fb2-dfaa3642c33c': '51231c4f-b929-466c-aed3-9440639e0bd7',
   'd5bff230-0e6a-4211-b0ce-342e8fbace51': '8d4d1bd6-142f-4d0f-8854-333742eeeba3',
   '636cb5d4-1316-4382-90db-fa6c16deb1f4': '31d0ac07-57a9-472d-b07a-f9a26b2ba89e',
