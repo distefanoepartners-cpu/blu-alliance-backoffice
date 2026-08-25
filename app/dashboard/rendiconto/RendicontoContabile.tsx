@@ -5,6 +5,7 @@ import { useState, useMemo, useEffect, useCallback } from "react"
 interface Prenotazione {
   id: string
   data_servizio: string
+  forfettario?: boolean
   servizio_nome: string
   imbarcazione_id: string | null
   imbarcazione_nome: string
@@ -119,21 +120,28 @@ export default function RendicontoContabile({ lockedFornitoreId, fornitoreLabel 
   }, [aggregatedPrenotazioni, sortCol, sortDir])
 
   const enriched = useMemo(
-    () => rows.map((r) => ({
-      ...r,
-      commissione: (r.prezzo_totale || 0) * ((r.percentuale_commissione ?? DEFAULT_RATE) / 100),
-      saldoFornitore: (r.prezzo_totale || 0) * (1 - (r.percentuale_commissione ?? DEFAULT_RATE) / 100),
-    })),
+    () => rows.map((r) => {
+      const perc = r.percentuale_commissione ?? DEFAULT_RATE
+      const lordo = r.prezzo_totale || 0
+      const commissione = lordo * (perc / 100)
+      // ⭐ Forfettario dal 1/8/2026: BA incassa solo la commissione, non eroga nulla al socio
+      // (il socio ha già incassato dal cliente). Prima/normali: BA incassa il pieno e eroga il saldo.
+      const isForfAgosto = !!(r as any).forfettario && (r.data_servizio || '') >= '2026-08-01'
+      const incassatoBA = isForfAgosto ? commissione : lordo
+      const saldoFornitore = isForfAgosto ? 0 : lordo * (1 - perc / 100)
+      return { ...r, commissione, saldoFornitore, incassatoBA, isForfAgosto }
+    }),
     [rows]
   )
 
   const totals = useMemo(
     () => enriched.reduce((acc, r) => ({
       pax: acc.pax + (r.numero_persone || 0),
-      importo: acc.importo + (r.prezzo_totale || 0),
+      importo: acc.importo + r.incassatoBA,
+      lordo: acc.lordo + (r.prezzo_totale || 0),
       commissione: acc.commissione + r.commissione,
       saldoFornitore: acc.saldoFornitore + r.saldoFornitore,
-    }), { pax: 0, importo: 0, commissione: 0, saldoFornitore: 0 }),
+    }), { pax: 0, importo: 0, lordo: 0, commissione: 0, saldoFornitore: 0 }),
     [enriched]
   )
 
@@ -468,7 +476,7 @@ export default function RendicontoContabile({ lockedFornitoreId, fornitoreLabel 
       {/* Summary Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 20 }}>
         {(isCompleto ? [
-          { value: fmt(totals.importo), label: "Totale incassato", color: P.primary },
+          { value: fmt(totals.importo), label: "Incasso Blu Alliance", color: P.primary },
           { value: fmt(totals.commissione), label: "Commissioni Blu Alliance", color: P.accent },
           { value: fmt(totals.saldoFornitore), label: isOperatore ? "Il tuo saldo" : "Da erogare ai fornitori", color: P.orange },
           { value: String(totals.pax), label: `Passeggeri · ${enriched.length} tour`, color: P.muted },

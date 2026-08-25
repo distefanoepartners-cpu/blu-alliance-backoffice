@@ -30,10 +30,14 @@ export async function GET(request: NextRequest) {
 
     const { data: fornitori, error: errForn } = await supabase
       .from('fornitori')
-      .select('id, ragione_sociale, percentuale_commissione')
+      .select('id, ragione_sociale, percentuale_commissione, forfettario')
       .order('ragione_sociale')
 
     if (errForn) return NextResponse.json({ error: errForn.message }, { status: 500 })
+
+    // Mappa fornitore_id -> forfettario (per marcare le prenotazioni)
+    const forfettarioById: Record<string, boolean> = {}
+    ;(fornitori || []).forEach((f: any) => { forfettarioById[f.id] = !!f.forfettario })
 
     // Barca in flotta -> 18% fisso.
     // Barca esterna -> percentuale dalla view (COALESCE override, fornitore), fallback 18%.
@@ -55,6 +59,7 @@ export async function GET(request: NextRequest) {
         percentuale_commissione: percentuale,
         fornitore_id: p.fornitore_id,
         fornitore_nome: p.fornitore_nome,
+        forfettario: forfettarioById[p.fornitore_id] || false,
         numero_persone: p.numero_persone,
         prezzo_totale: p.prezzo_totale,
         stato: p.stato,

@@ -20,6 +20,15 @@ export default function NaviPage() {
   const [editValue, setEditValue] = useState<string>('')
   const [savingPax, setSavingPax] = useState(false)
 
+  // ⭐ Aggiungi / Modifica nave
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [editNaveId, setEditNaveId] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [nuovaNave, setNuovaNave] = useState({
+    data_arrivo: '', nome_nave: '', capienza_pax: '',
+    ora_arrivo: '', ora_partenza: '', data_partenza: '', pax_previsti: '', note: ''
+  })
+
   useEffect(() => { loadArrivi() }, [meseCorrente, vista, annoStagione])
 
   async function loadArrivi() {
@@ -85,6 +94,89 @@ export default function NaviPage() {
     }
   }
 
+  // ⭐ Apre il modale in modalità "aggiungi"
+  function openAddNave() {
+    setEditNaveId(null)
+    setNuovaNave({ data_arrivo: '', nome_nave: '', capienza_pax: '', ora_arrivo: '', ora_partenza: '', data_partenza: '', pax_previsti: '', note: '' })
+    setShowAddModal(true)
+  }
+
+  // ⭐ Apre il modale in modalità "modifica" precompilato
+  function openEditNave(ship: any) {
+    setEditNaveId(ship.id)
+    setNuovaNave({
+      data_arrivo: ship.data_arrivo || '',
+      nome_nave: ship.nome_nave || '',
+      capienza_pax: ship.capienza_pax != null ? String(ship.capienza_pax) : '',
+      ora_arrivo: ship.ora_arrivo ? ship.ora_arrivo.substring(0, 5) : '',
+      ora_partenza: ship.ora_partenza ? ship.ora_partenza.substring(0, 5) : '',
+      data_partenza: ship.data_partenza || '',
+      pax_previsti: ship.pax_previsti != null ? String(ship.pax_previsti) : '',
+      note: ship.note || '',
+    })
+    setShowAddModal(true)
+  }
+
+  // ⭐ Aggiungi o modifica una nave
+  async function handleAddNave() {
+    if (!nuovaNave.data_arrivo || !nuovaNave.nome_nave.trim()) {
+      toast.error('Data arrivo e nome nave sono obbligatori')
+      return
+    }
+    setSaving(true)
+    try {
+      const payload: any = {
+        data_arrivo: nuovaNave.data_arrivo,
+        nome_nave: nuovaNave.nome_nave.trim().toUpperCase(),
+        capienza_pax: nuovaNave.capienza_pax ? parseInt(nuovaNave.capienza_pax) : null,
+        ora_arrivo: nuovaNave.ora_arrivo || null,
+        ora_partenza: nuovaNave.ora_partenza || null,
+        data_partenza: nuovaNave.data_partenza || nuovaNave.data_arrivo,
+        pax_previsti: nuovaNave.pax_previsti ? parseInt(nuovaNave.pax_previsti) : null,
+        note: nuovaNave.note || (editNaveId ? null : 'Aggiunta manuale'),
+      }
+
+      if (editNaveId) {
+        const { error } = await supabase.from('arrivi_navi').update(payload).eq('id', editNaveId)
+        if (error) throw error
+        toast.success(`Nave ${payload.nome_nave} aggiornata`)
+      } else {
+        const { error } = await supabase.from('arrivi_navi').insert(payload)
+        if (error) throw error
+        toast.success(`Nave ${payload.nome_nave} aggiunta`)
+      }
+
+      setShowAddModal(false)
+      setEditNaveId(null)
+      setNuovaNave({ data_arrivo: '', nome_nave: '', capienza_pax: '', ora_arrivo: '', ora_partenza: '', data_partenza: '', pax_previsti: '', note: '' })
+      const dataNave = parseISO(payload.data_arrivo)
+      if (vista !== 'stagione' && (dataNave < startOfMonth(meseCorrente) || dataNave > endOfMonth(meseCorrente))) {
+        setMeseCorrente(startOfMonth(dataNave))
+      } else {
+        loadArrivi()
+      }
+    } catch (e: any) {
+      console.error(e)
+      toast.error(e.message || 'Errore salvataggio')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ⭐ Elimina una nave (con conferma)
+  async function handleDeleteNave(ship: any) {
+    if (!confirm(`Eliminare la nave "${ship.nome_nave}" del ${ship.data_arrivo}?\n\nL'azione è irreversibile.`)) return
+    try {
+      const { error } = await supabase.from('arrivi_navi').delete().eq('id', ship.id)
+      if (error) throw error
+      setArrivi(prev => prev.filter(a => a.id !== ship.id))
+      toast.success('Nave eliminata')
+    } catch (e: any) {
+      console.error(e)
+      toast.error(e.message || 'Errore eliminazione')
+    }
+  }
+
   const filtered = arrivi.filter(a => {
     if (!searchTerm) return true
     return a.nome_nave.toLowerCase().includes(searchTerm.toLowerCase())
@@ -130,6 +222,12 @@ export default function NaviPage() {
           <p className="text-gray-600 mt-1">
             Porto di Salerno — {isStagione ? `Stagione ${annoStagione}` : 'Stagione 2026'}
           </p>
+          <button
+            onClick={openAddNave}
+            className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm"
+          >
+            ➕ Aggiungi nave
+          </button>
         </div>
         {!isStagione && (
           <div className="flex items-center gap-2">
@@ -304,6 +402,10 @@ export default function NaviPage() {
                             ✏️ Pax reali
                           </button>
                         )}
+                        <button onClick={() => openEditNave(ship)}
+                          className="px-2 py-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg text-xs" title="Modifica nave">✏️</button>
+                        <button onClick={() => handleDeleteNave(ship)}
+                          className="px-2 py-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg text-xs" title="Elimina nave">🗑️</button>
                       </div>
                     )
                   })}
@@ -325,6 +427,7 @@ export default function NaviPage() {
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Effettivi</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Arrivo</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Partenza</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Azioni</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -399,11 +502,93 @@ export default function NaviPage() {
                           <span className="text-[10px] text-amber-600 ml-1">({format(parseISO(ship.data_partenza), 'd/MM', { locale: it })})</span>
                         )}
                       </td>
+                      <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                        <button onClick={() => openEditNave(ship)}
+                          className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Modifica nave">✏️</button>
+                        <button onClick={() => handleDeleteNave(ship)}
+                          className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded ml-1" title="Elimina nave">🗑️</button>
+                      </td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modale Aggiungi nave */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => { if (!saving) { setShowAddModal(false); setEditNaveId(null) } }}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">{editNaveId ? '✏️ Modifica nave' : '➕ Aggiungi nave'}</h3>
+              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Data arrivo *</label>
+                  <input type="date" value={nuovaNave.data_arrivo}
+                    onChange={(e) => setNuovaNave({ ...nuovaNave, data_arrivo: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Data partenza</label>
+                  <input type="date" value={nuovaNave.data_partenza}
+                    onChange={(e) => setNuovaNave({ ...nuovaNave, data_partenza: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome nave *</label>
+                <input type="text" value={nuovaNave.nome_nave}
+                  onChange={(e) => setNuovaNave({ ...nuovaNave, nome_nave: e.target.value })}
+                  placeholder="Es. NORWEGIAN EPIC"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm uppercase" />
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Capienza pax</label>
+                  <input type="number" value={nuovaNave.capienza_pax}
+                    onChange={(e) => setNuovaNave({ ...nuovaNave, capienza_pax: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ora arrivo</label>
+                  <input type="time" value={nuovaNave.ora_arrivo}
+                    onChange={(e) => setNuovaNave({ ...nuovaNave, ora_arrivo: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ora partenza</label>
+                  <input type="time" value={nuovaNave.ora_partenza}
+                    onChange={(e) => setNuovaNave({ ...nuovaNave, ora_partenza: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pax previsti (nostri)</label>
+                <input type="number" value={nuovaNave.pax_previsti}
+                  onChange={(e) => setNuovaNave({ ...nuovaNave, pax_previsti: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                <input type="text" value={nuovaNave.note}
+                  onChange={(e) => setNuovaNave({ ...nuovaNave, note: e.target.value })}
+                  placeholder="Aggiunta manuale"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-5 py-4 border-t">
+              <button onClick={() => setShowAddModal(false)} disabled={saving}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Annulla</button>
+              <button onClick={handleAddNave} disabled={saving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+                {saving ? 'Salvataggio...' : (editNaveId ? 'Salva modifiche' : 'Aggiungi')}
+              </button>
+            </div>
           </div>
         </div>
       )}
