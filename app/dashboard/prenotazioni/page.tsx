@@ -12,7 +12,8 @@ export default function PrenotazioniPage() {
   const router = useRouter()
   const [prenotazioni, setPrenotazioni] = useState<any[]>([])
   const [filtroPeriodo, setFiltroPeriodo] = useState<'oggi' | 'mese' | 'data' | 'tutte'>('tutte')
-  const [dataFiltro, setDataFiltro] = useState<string>('')
+  const [dataDal, setDataDal] = useState<string>('')
+  const [dataAl, setDataAl] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [filtroStato, setFiltroStato] = useState<string>('tutte')
   const [filtroMetodo, setFiltroMetodo] = useState<string>('tutti')
@@ -77,7 +78,11 @@ export default function PrenotazioniPage() {
     // Filtro periodo (sulla data del servizio)
     if (filtroPeriodo === 'oggi' && p.data_servizio !== oggiStr) return false
     if (filtroPeriodo === 'mese' && !(p.data_servizio || '').startsWith(meseCorrente)) return false
-    if (filtroPeriodo === 'data' && dataFiltro && p.data_servizio !== dataFiltro) return false
+    if (filtroPeriodo === 'data') {
+      const d = p.data_servizio || ''
+      if (dataDal && d < dataDal) return false
+      if (dataAl && d > dataAl) return false
+    }
 
     // Filtro stato
     if (filtroStato !== 'tutte' && p.stato !== filtroStato) return false
@@ -367,12 +372,22 @@ export default function PrenotazioniPage() {
               </button>
             ))}
             {filtroPeriodo === 'data' && (
-              <input
-                type="date"
-                value={dataFiltro}
-                onChange={(e) => setDataFiltro(e.target.value)}
-                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
-              />
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-500">Dal</label>
+                <input
+                  type="date"
+                  value={dataDal}
+                  onChange={(e) => setDataDal(e.target.value)}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+                />
+                <label className="text-sm text-gray-500">Al</label>
+                <input
+                  type="date"
+                  value={dataAl}
+                  onChange={(e) => setDataAl(e.target.value)}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
             )}
           </div>
         </div>
