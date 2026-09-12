@@ -68,11 +68,18 @@ export async function GET(request: NextRequest) {
       if (!errAss) assegnate = ass || []
     }
 
-    // ── 6. Blocchi imbarcazioni (indisponibilità) ultimo anno ───────
+    // ── 6. Blocchi imbarcazioni (indisponibilità) — solo recenti/futuri ───────
+    // Carichiamo solo i blocchi con data_fine dagli ultimi 30 giorni in poi:
+    // sono quelli rilevanti per l'analisi disponibilità corrente, ed evita
+    // il limite di default di 1000 righe di Supabase (i blocchi storici sono >1300).
+    const trentaGiorniFa = new Date()
+    trentaGiorniFa.setDate(trentaGiorniFa.getDate() - 30)
     const { data: blocchi } = await supabase
       .from('blocchi_imbarcazioni')
       .select('imbarcazione_id, data_inizio, data_fine, motivo, note')
-      .gte('data_fine', sixtyDaysAgo.toISOString().split('T')[0])
+      .gte('data_fine', trentaGiorniFa.toISOString().split('T')[0])
+      .order('data_inizio', { ascending: false })
+      .limit(2000)
 
     return NextResponse.json({
       navi: navi || [],
