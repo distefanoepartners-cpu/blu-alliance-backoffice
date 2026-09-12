@@ -82,14 +82,33 @@ export default function RiepilogoUscite() {
       if (dataAl && d > dataAl) return false
       return true
     })
-    const map: Record<string, { barca: string; fornitore: string; uscite: number; pax: number }> = {}
+    const map: Record<string, {
+      barca: string; fornitore: string;
+      uscitePrivate: number;
+      giorniCollettivi: Set<string>;  // date distinte con collettivi = uscite collettive
+      pax: number;
+    }> = {}
     validi.forEach(s => {
       const key = s.imbarcazione_id || s.imbarcazione_nome
-      if (!map[key]) map[key] = { barca: s.imbarcazione_nome || '—', fornitore: s.fornitore_nome || '—', uscite: 0, pax: 0 }
-      map[key].uscite += 1
-      map[key].pax += s.numero_persone || 0
+      if (!map[key]) map[key] = { barca: s.imbarcazione_nome || '—', fornitore: s.fornitore_nome || '—', uscitePrivate: 0, giorniCollettivi: new Set(), pax: 0 }
+      const isCollettivo = (s.servizio_tipo || '').toLowerCase() === 'tour_collettivo'
+      if (isCollettivo) {
+        // i collettivi contano 1 uscita per giorno (gruppo che parte insieme)
+        map[key].giorniCollettivi.add(s.data_servizio || '')
+      } else {
+        // privati: 1 uscita per prenotazione
+        map[key].uscitePrivate += 1
+      }
+      map[key].pax += s.numero_persone || 0  // pax sempre sommati
     })
-    return Object.values(map).sort((a, b) => b.uscite - a.uscite)
+    return Object.values(map)
+      .map(m => ({
+        barca: m.barca,
+        fornitore: m.fornitore,
+        uscite: m.uscitePrivate + m.giorniCollettivi.size,  // private + gruppi collettivi
+        pax: m.pax,
+      }))
+      .sort((a, b) => b.uscite - a.uscite)
   }, [storico, fornitoreFiltro, dataDal, dataAl])
 
   const totali = useMemo(() => ({
