@@ -13,6 +13,19 @@ interface StoricoRow {
   servizio_tipo?: string
 }
 interface Fornitore { id: string; nome: string }
+interface Blocco {
+  imbarcazione_id: string
+  data_inizio: string
+  data_fine: string
+  motivo: string
+  note: string
+}
+interface Imbarcazione {
+  id: string
+  nome: string
+  fornitore_id: string
+  tour_collettivi_attivi?: boolean
+}
 
 const P = {
   bg: "#f8f9fc", card: "#fff", border: "#e2e6ef", text: "#1a1f36", muted: "#6b7394",
@@ -41,6 +54,8 @@ function rangeMese(): [string, string] {
 export default function RiepilogoUscite() {
   const [storico, setStorico] = useState<StoricoRow[]>([])
   const [fornitori, setFornitori] = useState<Fornitore[]>([])
+  const [blocchi, setBlocchi] = useState<Blocco[]>([])
+  const [imbarcazioni, setImbarcazioni] = useState<Imbarcazione[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -58,6 +73,8 @@ export default function RiepilogoUscite() {
       if (json.error) throw new Error(json.error)
       setStorico(json.storico || [])
       setFornitori(json.fornitori || [])
+      setBlocchi(json.blocchi || [])
+      setImbarcazioni(json.imbarcazioni || [])
     } catch (err: any) { setError(err.message) } finally { setLoading(false) }
   }, [])
 
@@ -107,6 +124,47 @@ export default function RiepilogoUscite() {
     uscite: righe.reduce((s, r) => s + r.uscite, 0),
     pax: righe.reduce((s, r) => s + r.pax, 0),
   }), [righe])
+
+  // ⭐ Analisi disponibilità: attiva solo quando è selezionato un SINGOLO giorno
+  const giornoSingolo = dataDal && dataAl && dataDal === dataAl ? dataDal : null
+  const analisiGiorno = useMemo(() => {
+    if (!giornoSingolo) return null
+    const g = giornoSingolo
+
+    // barche attive (già filtrate a monte dalla route con attiva=true), eventualmente filtro fornitore
+    const barcheAttive = imbarcazioni.filter(b => fornitoreFiltro === 'all' || b.fornitore_id === fornitoreFiltro)
+
+    // uscite del giorno (barca_id con prenotazione confermata/completata quel giorno)
+    const usciteIds = new Set(
+      storico.filter(s => {
+        const st = (s.stato || '').toLowerCase()
+        return (st === 'confermata' || st === 'completata') && s.data_servizio === g &&
+          (fornitoreFiltro === 'all' || s.fornitore_id === fornitoreFiltro)
+      }).map(s => s.imbarcazione_id)
+    )
+
+    // blocchi attivi quel giorno: motivo/note per barca
+    const bloccoByBarca: Record<string, Blocco> = {}
+    blocchi.forEach(b => {
+      if (g >= b.data_inizio && g <= b.data_fine) bloccoByBarca[b.imbarcazione_id] = b
+    })
+
+    const uscite: { nome: string; fornitore: string }[] = []
+    const disponibiliNonUscite: { nome: string; fornitore: string }[] = []
+    const bloccate: { nome: string; fornitore: string; motivo: string }[] = []
+
+    const fornMap = new Map(fornitori.map(f => [f.id, f.nome]))
+    barcheAttive.forEach(b => {
+      const fn = fornMap.get(b.fornitore_id) || '—'
+      if (usciteIds.has(b.id)) uscite.push({ nome: b.nome, fornitore: fn })
+      else if (bloccoByBarca[b.id]) {
+        const blk = bloccoByBarca[b.id]
+        bloccate.push({ nome: b.nome, fornitore: fn, motivo: (blk.note || blk.motivo || 'Indisponibilità') })
+      } else disponibiliNonUscite.push({ nome: b.nome, fornitore: fn })
+    })
+
+    return { uscite, disponibiliNonUscite, bloccate, totaleAttive: barcheAttive.length }
+  }, [giornoSingolo, imbarcazioni, storico, blocchi, fornitori, fornitoreFiltro])
 
   async function esportaExcel() {
     const header = ['Barca', 'Fornitore', 'N° Uscite', 'N° Passeggeri']
@@ -200,6 +258,52 @@ export default function RiepilogoUscite() {
           <div style={{ fontSize: 12, color: P.muted }}>Passeggeri imbarcati</div>
         </div>
       </div>
+
+      {/* ⭐ Analisi disponibilità (solo su singolo giorno) */}
+      {analisiGiorno && (
+        <div style={{ background: P.card, borderRadius: 12, border: `1px solid ${P.border}`, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: P.text, marginBottom: 4 }}>
+            📅 Analisi disponibilità del giorno
+          </div>
+          <div style={{ fontSize: 13, color: P.muted, marginBottom: 14 }}>
+            Su {analisiGiorno.totaleAttive} barche attive: {analisiGiorno.uscite.length} uscite, {analisiGiorno.disponibiliNonUscite.length} disponibili non uscite, {analisiGiorno.bloccate.length} bloccate.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            {/* Uscite */}
+            <div style={{ background: P.accentLt, borderRadius: 10, padding: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: P.accent, marginBottom: 8 }}>✅ Uscite ({analisiGiorno.uscite.length})</div>
+              {analisiGiorno.uscite.length === 0 ? <div style={{ fontSize: 12, color: P.muted }}>—</div> :
+                analisiGiorno.uscite.map((b, i) => (
+                  <div key={i} style={{ fontSize: 12, color: P.text, marginBottom: 3 }}>{b.nome} <span style={{ color: P.muted }}>· {b.fornitore}</span></div>
+                ))}
+            </div>
+            {/* Disponibili non uscite */}
+            <div style={{ background: '#fffbeb', borderRadius: 10, padding: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: P.orange, marginBottom: 8 }}>🟡 Disponibili non uscite ({analisiGiorno.disponibiliNonUscite.length})</div>
+              {analisiGiorno.disponibiliNonUscite.length === 0 ? <div style={{ fontSize: 12, color: P.muted }}>—</div> :
+                analisiGiorno.disponibiliNonUscite.map((b, i) => (
+                  <div key={i} style={{ fontSize: 12, color: P.text, marginBottom: 3 }}>{b.nome} <span style={{ color: P.muted }}>· {b.fornitore}</span></div>
+                ))}
+            </div>
+            {/* Bloccate */}
+            <div style={{ background: '#fef2f2', borderRadius: 10, padding: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: P.warn, marginBottom: 8 }}>⚓ Bloccate ({analisiGiorno.bloccate.length})</div>
+              {analisiGiorno.bloccate.length === 0 ? <div style={{ fontSize: 12, color: P.muted }}>—</div> :
+                analisiGiorno.bloccate.map((b, i) => (
+                  <div key={i} style={{ fontSize: 12, color: P.text, marginBottom: 3 }}>{b.nome} <span style={{ color: P.muted }}>· {b.motivo}</span></div>
+                ))}
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: P.muted, marginTop: 12, fontStyle: "italic" }}>
+            Le barche non uscite erano disponibili (potevano lavorare) o bloccate dal socio per impegno esterno. Le bloccate non concorrono alla rotazione di quel giorno.
+          </div>
+        </div>
+      )}
+      {!giornoSingolo && (
+        <div style={{ fontSize: 12, color: P.muted, marginBottom: 16, fontStyle: "italic" }}>
+          💡 Seleziona un singolo giorno (Dal = Al, o preset "Oggi") per vedere l'analisi di disponibilità: uscite, disponibili non uscite e barche bloccate.
+        </div>
+      )}
 
       {/* Tabella */}
       <div style={{ background: P.card, borderRadius: 12, border: `1px solid ${P.border}`, overflow: "hidden" }}>

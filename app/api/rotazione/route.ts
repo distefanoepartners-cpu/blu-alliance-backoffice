@@ -68,12 +68,19 @@ export async function GET(request: NextRequest) {
       if (!errAss) assegnate = ass || []
     }
 
+    // ── 6. Blocchi imbarcazioni (indisponibilità) ultimo anno ───────
+    const { data: blocchi } = await supabase
+      .from('blocchi_imbarcazioni')
+      .select('imbarcazione_id, data_inizio, data_fine, motivo, note')
+      .gte('data_fine', sixtyDaysAgo.toISOString().split('T')[0])
+
     return NextResponse.json({
       navi: navi || [],
       imbarcazioni: imbarcazioni || [],
       fornitori: (fornitori || []).map((f: any) => ({ id: f.id, nome: f.ragione_sociale })),
       storico: storico || [],
       assegnate,
+      blocchi: blocchi || [],
     })
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
