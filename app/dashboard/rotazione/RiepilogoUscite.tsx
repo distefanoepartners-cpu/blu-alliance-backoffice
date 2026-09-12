@@ -192,13 +192,22 @@ export default function RiepilogoUscite() {
     const barcheAttive = imbarcazioni.filter(b => fornitoreFiltro === 'all' || b.fornitore_id === fornitoreFiltro)
 
     // IMPEGNATE = solo prenotazioni BA (i tour reali del consorzio), esclusi cancellata/annullata
-    const impegnateIds = new Set(
-      storico.filter(s => {
-        const st = (s.stato || '').toLowerCase()
-        return st !== 'cancellata' && st !== 'annullata' && s.data_servizio === g &&
-          (fornitoreFiltro === 'all' || s.fornitore_id === fornitoreFiltro)
-      }).map(s => s.imbarcazione_id)
-    )
+    const impegnateIds = new Set<string>()
+    const tipoByBarca: Record<string, string> = {}  // 'collettivo' | 'privato'
+    storico.forEach(s => {
+      const st = (s.stato || '').toLowerCase()
+      if (st === 'cancellata' || st === 'annullata') return
+      if (s.data_servizio !== g) return
+      if (fornitoreFiltro !== 'all' && s.fornitore_id !== fornitoreFiltro) return
+      impegnateIds.add(s.imbarcazione_id)
+      const tipo = (s.servizio_tipo || '').toLowerCase() === 'tour_collettivo' ? 'collettivo' : 'privato'
+      // se la barca ha già un tipo diverso quel giorno, segna "misto"
+      if (tipoByBarca[s.imbarcazione_id] && tipoByBarca[s.imbarcazione_id] !== tipo) {
+        tipoByBarca[s.imbarcazione_id] = 'misto'
+      } else if (!tipoByBarca[s.imbarcazione_id]) {
+        tipoByBarca[s.imbarcazione_id] = tipo
+      }
+    })
 
     // NON DISPONIBILI = blocchi socio + posti esterni + occupazione NS3000 (con motivo)
     const nonDispByBarca: Record<string, string> = {}
@@ -213,14 +222,14 @@ export default function RiepilogoUscite() {
       if (!nonDispByBarca[id]) nonDispByBarca[id] = 'occupata NS3000'
     })
 
-    const uscite: { nome: string; fornitore: string }[] = []
+    const uscite: { nome: string; fornitore: string; tipo: string }[] = []
     const disponibiliNonUscite: { nome: string; fornitore: string }[] = []
     const bloccate: { nome: string; fornitore: string; motivo: string }[] = []
 
     const fornMap = new Map(fornitori.map(f => [f.id, f.nome]))
     barcheAttive.forEach(b => {
       const fn = fornMap.get(b.fornitore_id) || '—'
-      if (impegnateIds.has(b.id)) uscite.push({ nome: b.nome, fornitore: fn })
+      if (impegnateIds.has(b.id)) uscite.push({ nome: b.nome, fornitore: fn, tipo: tipoByBarca[b.id] || 'privato' })
       else if (nonDispByBarca[b.id]) {
         bloccate.push({ nome: b.nome, fornitore: fn, motivo: nonDispByBarca[b.id] })
       } else disponibiliNonUscite.push({ nome: b.nome, fornitore: fn })
@@ -321,7 +330,14 @@ export default function RiepilogoUscite() {
               <div style={{ fontSize: 12, fontWeight: 700, color: P.accent, marginBottom: 8 }}>🔵 Impegnate BA ({analisiGiorno.uscite.length})</div>
               {analisiGiorno.uscite.length === 0 ? <div style={{ fontSize: 12, color: P.muted }}>—</div> :
                 analisiGiorno.uscite.map((b, i) => (
-                  <div key={i} style={{ fontSize: 12, color: P.text, marginBottom: 3 }}>{b.nome} <span style={{ color: P.muted }}>· {b.fornitore}</span></div>
+                  <div key={i} style={{ fontSize: 12, color: P.text, marginBottom: 3 }}>
+                    {b.nome} <span style={{ color: P.muted }}>· {b.fornitore}</span>
+                    <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 6,
+                      background: b.tipo === 'collettivo' ? '#e3fcef' : (b.tipo === 'misto' ? '#fef3c7' : '#e8f0fe'),
+                      color: b.tipo === 'collettivo' ? '#00875a' : (b.tipo === 'misto' ? '#b45309' : '#0047AB') }}>
+                      {b.tipo === 'collettivo' ? 'COLLETTIVO' : (b.tipo === 'misto' ? 'MISTO' : 'PRIVATO')}
+                    </span>
+                  </div>
                 ))}
             </div>
             {/* Disponibili non uscite */}
