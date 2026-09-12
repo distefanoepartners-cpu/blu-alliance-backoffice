@@ -191,8 +191,7 @@ export default function RiepilogoUscite() {
     // barche attive (già filtrate a monte dalla route con attiva=true), eventualmente filtro fornitore
     const barcheAttive = imbarcazioni.filter(b => fornitoreFiltro === 'all' || b.fornitore_id === fornitoreFiltro)
 
-    // impegnate del giorno (barca con QUALSIASI prenotazione attiva quel giorno,
-    // esclusi cancellata/annullata → la barca è occupata comunque)
+    // IMPEGNATE = solo prenotazioni BA (i tour reali del consorzio), esclusi cancellata/annullata
     const impegnateIds = new Set(
       storico.filter(s => {
         const st = (s.stato || '').toLowerCase()
@@ -200,17 +199,18 @@ export default function RiepilogoUscite() {
           (fornitoreFiltro === 'all' || s.fornitore_id === fornitoreFiltro)
       }).map(s => s.imbarcazione_id)
     )
-    // ⭐ posti esterni occupati quel giorno → barca impegnata
-    postiEsterni.forEach(pe => {
-      if (pe.data === g && (pe.posti_occupati || 0) > 0) impegnateIds.add(pe.imbarcazione_id)
-    })
-    // ⭐ occupazione NS3000 (barche mappate occupate su NS3000 quel giorno)
-    ns3000OccupateIds.forEach(id => impegnateIds.add(id))
 
-    // blocchi attivi quel giorno: motivo/note per barca
-    const bloccoByBarca: Record<string, Blocco> = {}
+    // NON DISPONIBILI = blocchi socio + posti esterni + occupazione NS3000 (con motivo)
+    const nonDispByBarca: Record<string, string> = {}
     blocchi.forEach(b => {
-      if (g >= b.data_inizio && g <= b.data_fine) bloccoByBarca[b.imbarcazione_id] = b
+      if (g >= b.data_inizio && g <= b.data_fine) nonDispByBarca[b.imbarcazione_id] = (b.note || b.motivo || 'Indisponibilità')
+    })
+    postiEsterni.forEach(pe => {
+      if (pe.data === g && (pe.posti_occupati || 0) > 0 && !nonDispByBarca[pe.imbarcazione_id])
+        nonDispByBarca[pe.imbarcazione_id] = 'prenotazione esterna'
+    })
+    ns3000OccupateIds.forEach(id => {
+      if (!nonDispByBarca[id]) nonDispByBarca[id] = 'occupata NS3000'
     })
 
     const uscite: { nome: string; fornitore: string }[] = []
@@ -221,9 +221,8 @@ export default function RiepilogoUscite() {
     barcheAttive.forEach(b => {
       const fn = fornMap.get(b.fornitore_id) || '—'
       if (impegnateIds.has(b.id)) uscite.push({ nome: b.nome, fornitore: fn })
-      else if (bloccoByBarca[b.id]) {
-        const blk = bloccoByBarca[b.id]
-        bloccate.push({ nome: b.nome, fornitore: fn, motivo: (blk.note || blk.motivo || 'Indisponibilità') })
+      else if (nonDispByBarca[b.id]) {
+        bloccate.push({ nome: b.nome, fornitore: fn, motivo: nonDispByBarca[b.id] })
       } else disponibiliNonUscite.push({ nome: b.nome, fornitore: fn })
     })
 
@@ -314,12 +313,12 @@ export default function RiepilogoUscite() {
             📅 Analisi disponibilità del giorno
           </div>
           <div style={{ fontSize: 13, color: P.muted, marginBottom: 14 }}>
-            Su {analisiGiorno.totaleAttive} barche attive: {analisiGiorno.uscite.length} impegnate, {analisiGiorno.disponibiliNonUscite.length} disponibili libere, {analisiGiorno.bloccate.length} bloccate.
+            Su {analisiGiorno.totaleAttive} barche attive: {analisiGiorno.uscite.length} impegnate (prenotazioni BA), {analisiGiorno.disponibiliNonUscite.length} disponibili libere, {analisiGiorno.bloccate.length} non disponibili.
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
             {/* Uscite */}
             <div style={{ background: P.accentLt, borderRadius: 10, padding: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: P.accent, marginBottom: 8 }}>🔵 Impegnate ({analisiGiorno.uscite.length})</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: P.accent, marginBottom: 8 }}>🔵 Impegnate BA ({analisiGiorno.uscite.length})</div>
               {analisiGiorno.uscite.length === 0 ? <div style={{ fontSize: 12, color: P.muted }}>—</div> :
                 analisiGiorno.uscite.map((b, i) => (
                   <div key={i} style={{ fontSize: 12, color: P.text, marginBottom: 3 }}>{b.nome} <span style={{ color: P.muted }}>· {b.fornitore}</span></div>
@@ -335,7 +334,7 @@ export default function RiepilogoUscite() {
             </div>
             {/* Bloccate */}
             <div style={{ background: '#fef2f2', borderRadius: 10, padding: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: P.warn, marginBottom: 8 }}>⚓ Bloccate ({analisiGiorno.bloccate.length})</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: P.warn, marginBottom: 8 }}>⚓ Non disponibili ({analisiGiorno.bloccate.length})</div>
               {analisiGiorno.bloccate.length === 0 ? <div style={{ fontSize: 12, color: P.muted }}>—</div> :
                 analisiGiorno.bloccate.map((b, i) => (
                   <div key={i} style={{ fontSize: 12, color: P.text, marginBottom: 3 }}>{b.nome} <span style={{ color: P.muted }}>· {b.motivo}</span></div>
@@ -343,7 +342,7 @@ export default function RiepilogoUscite() {
             </div>
           </div>
           <div style={{ fontSize: 12, color: P.muted, marginTop: 12, fontStyle: "italic" }}>
-            Impegnate = con prenotazione (occupate). Disponibili libere = potevano lavorare ma senza prenotazione. Bloccate = indisponibili per scelta del socio. Solo le disponibili libere avrebbero potuto ricevere un tour.
+            Impegnate BA = tour reali del consorzio. Disponibili libere = potevano ricevere un tour. Non disponibili = bloccate dal socio, occupate da prenotazioni esterne o su NS3000. Solo le disponibili libere avrebbero potuto ricevere un nuovo tour.
           </div>
         </div>
       )}
