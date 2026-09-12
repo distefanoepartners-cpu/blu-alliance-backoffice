@@ -26,6 +26,35 @@ interface Imbarcazione {
   fornitore_id: string
   tour_collettivi_attivi?: boolean
 }
+interface PostoEsterno {
+  imbarcazione_id: string
+  data: string
+  posti_occupati: number
+}
+
+// Mappa NS3000 boat_id → BA imbarcazione_id (per leggere l'occupazione NS3000)
+const ns3000ToBaMap: Record<string, string> = {
+  '4a222a73-304b-4945-813b-9548ba201675': 'b743d220-6200-49de-9324-68297e4eee75',
+  'd03cfe13-bcb6-4f98-bda4-a18b8bf7957d': '64e06e82-ed6e-4f23-b06e-14533a0187c6',
+  '00ce8828-ebf9-4aad-8ad8-8f6b4e90a1e3': '7e854592-bb5d-4971-98aa-ae66c2fa66ba',
+  '2edce19e-3687-42b9-bb87-57e2aabfccd2': 'b2a20895-eeab-493d-a2fb-53ef5ba1d220',
+  '937298ab-2a15-4ace-adb2-b63dd1b865b1': '4c4f4b54-4ee6-481f-94f9-a142b5d651b0',
+  '6800721d-a8e9-4217-b7a2-8548359c6cfc': '9a6cc58f-bb70-440e-92a1-d2e2c2712e5b',
+  '52a7e9d0-444e-4801-a095-afcbba7ceed5': 'b2c15f7e-ffb2-4afa-bf19-d53f8d26902b',
+  '180dd752-b2b4-4318-beed-8bc15b3877c2': '557ecf08-2e88-4914-a1d9-da5ec5bf5845',
+  '8c1b5b3d-d4a2-441c-8f8e-71b88ff6c966': '07673392-e08c-4d53-a128-e9d6c405917d',
+  '42d4c904-f2e1-4436-931b-3e7b651bd7a6': '2f4f1a71-5037-4fb0-bbd1-ef6c6acf8dc5',
+  'c35aefd0-6721-4f01-aeec-2d47bdf9f24f': 'e27ce151-0cd0-444e-b5f9-040b09859377',
+  '0e705ad6-bcaf-445f-b640-2c4b0a9166ff': '2d4995ec-35b3-4358-ace1-54621a9528ed',
+  '1e731610-2e9a-4a50-99d4-90f21488eb79': 'fb77e14d-9de5-479a-9051-beb4c4de9b09',
+  'fe759df8-5d8e-401f-8fb2-dfaa3642c33c': '51231c4f-b929-466c-aed3-9440639e0bd7',
+  'd5bff230-0e6a-4211-b0ce-342e8fbace51': '8d4d1bd6-142f-4d0f-8854-333742eeeba3',
+  '636cb5d4-1316-4382-90db-fa6c16deb1f4': '31d0ac07-57a9-472d-b07a-f9a26b2ba89e',
+  '1365d4d3-0ffb-48a8-a8a6-d3c49dd22145': 'a079598f-b25d-49d6-90ce-b25146687a31',
+  '7b039929-1af2-46ab-9a91-f051497161e7': 'c8638c23-cd35-4c11-8333-4316f1ca4726',
+  '02ffd51e-da3f-45fa-b2a5-92acc254e2a6': 'd8262b01-07d0-4795-ba31-e64c6eaf6f0f',
+  '3b967967-d7de-48bb-9f03-5e779aa15a27': '43d0b751-da8d-4181-aabc-ba3b217142bc',
+}
 
 const P = {
   bg: "#f8f9fc", card: "#fff", border: "#e2e6ef", text: "#1a1f36", muted: "#6b7394",
@@ -56,6 +85,9 @@ export default function RiepilogoUscite() {
   const [fornitori, setFornitori] = useState<Fornitore[]>([])
   const [blocchi, setBlocchi] = useState<Blocco[]>([])
   const [imbarcazioni, setImbarcazioni] = useState<Imbarcazione[]>([])
+  const [postiEsterni, setPostiEsterni] = useState<PostoEsterno[]>([])
+  // id BA delle barche occupate su NS3000 nel giorno selezionato (full_day non disponibile)
+  const [ns3000OccupateIds, setNs3000OccupateIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -75,6 +107,7 @@ export default function RiepilogoUscite() {
       setFornitori(json.fornitori || [])
       setBlocchi(json.blocchi || [])
       setImbarcazioni(json.imbarcazioni || [])
+      setPostiEsterni(json.postiEsterni || [])
     } catch (err: any) { setError(err.message) } finally { setLoading(false) }
   }, [])
 
@@ -127,6 +160,30 @@ export default function RiepilogoUscite() {
 
   // ⭐ Analisi disponibilità: attiva solo quando è selezionato un SINGOLO giorno
   const giornoSingolo = dataDal && dataAl && dataDal === dataAl ? dataDal : null
+
+  // ⭐ Carica l'occupazione NS3000 per il giorno singolo (barche mappate con full_day non disponibile)
+  useEffect(() => {
+    if (!giornoSingolo) { setNs3000OccupateIds(new Set()); return }
+    let annullato = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/ns3000/availability?date=' + giornoSingolo)
+        if (!res.ok) return
+        const data = await res.json()
+        const occ = new Set<string>()
+        ;(data.boats || []).forEach((boat: any) => {
+          const dayAvail = boat.availability?.[giornoSingolo!]
+          // occupata se il full_day non è disponibile (almeno una fascia presa)
+          if (dayAvail && dayAvail.slots && dayAvail.slots.full_day === false) {
+            const baId = ns3000ToBaMap[boat.boat_id]
+            if (baId) occ.add(baId)
+          }
+        })
+        if (!annullato) setNs3000OccupateIds(occ)
+      } catch { /* se NS3000 non risponde, l'analisi resta senza questo dato */ }
+    })()
+    return () => { annullato = true }
+  }, [giornoSingolo])
   const analisiGiorno = useMemo(() => {
     if (!giornoSingolo) return null
     const g = giornoSingolo
@@ -143,6 +200,12 @@ export default function RiepilogoUscite() {
           (fornitoreFiltro === 'all' || s.fornitore_id === fornitoreFiltro)
       }).map(s => s.imbarcazione_id)
     )
+    // ⭐ posti esterni occupati quel giorno → barca impegnata
+    postiEsterni.forEach(pe => {
+      if (pe.data === g && (pe.posti_occupati || 0) > 0) impegnateIds.add(pe.imbarcazione_id)
+    })
+    // ⭐ occupazione NS3000 (barche mappate occupate su NS3000 quel giorno)
+    ns3000OccupateIds.forEach(id => impegnateIds.add(id))
 
     // blocchi attivi quel giorno: motivo/note per barca
     const bloccoByBarca: Record<string, Blocco> = {}
@@ -165,7 +228,7 @@ export default function RiepilogoUscite() {
     })
 
     return { uscite, disponibiliNonUscite, bloccate, totaleAttive: barcheAttive.length }
-  }, [giornoSingolo, imbarcazioni, storico, blocchi, fornitori, fornitoreFiltro])
+  }, [giornoSingolo, imbarcazioni, storico, blocchi, postiEsterni, ns3000OccupateIds, fornitori, fornitoreFiltro])
 
   async function esportaExcel() {
     const header = ['Barca', 'Fornitore', 'N° Uscite', 'N° Passeggeri']

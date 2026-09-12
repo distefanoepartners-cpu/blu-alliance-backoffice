@@ -81,6 +81,14 @@ export async function GET(request: NextRequest) {
       .order('data_inizio', { ascending: false })
       .limit(2000)
 
+    // ── 7. Posti esterni (occupazione da prenotazioni esterne) — recenti ───
+    const { data: postiEsterni } = await supabase
+      .from('posti_esterni')
+      .select('imbarcazione_id, data, posti_occupati')
+      .gte('data', trentaGiorniFa.toISOString().split('T')[0])
+      .gt('posti_occupati', 0)
+      .limit(2000)
+
     return NextResponse.json({
       navi: navi || [],
       imbarcazioni: imbarcazioni || [],
@@ -88,6 +96,7 @@ export async function GET(request: NextRequest) {
       storico: storico || [],
       assegnate,
       blocchi: blocchi || [],
+      postiEsterni: postiEsterni || [],
     })
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
