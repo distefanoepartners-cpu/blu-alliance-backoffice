@@ -134,11 +134,12 @@ export default function RiepilogoUscite() {
     // barche attive (già filtrate a monte dalla route con attiva=true), eventualmente filtro fornitore
     const barcheAttive = imbarcazioni.filter(b => fornitoreFiltro === 'all' || b.fornitore_id === fornitoreFiltro)
 
-    // uscite del giorno (barca_id con prenotazione confermata/completata quel giorno)
-    const usciteIds = new Set(
+    // impegnate del giorno (barca con QUALSIASI prenotazione attiva quel giorno,
+    // esclusi cancellata/annullata → la barca è occupata comunque)
+    const impegnateIds = new Set(
       storico.filter(s => {
         const st = (s.stato || '').toLowerCase()
-        return (st === 'confermata' || st === 'completata') && s.data_servizio === g &&
+        return st !== 'cancellata' && st !== 'annullata' && s.data_servizio === g &&
           (fornitoreFiltro === 'all' || s.fornitore_id === fornitoreFiltro)
       }).map(s => s.imbarcazione_id)
     )
@@ -156,7 +157,7 @@ export default function RiepilogoUscite() {
     const fornMap = new Map(fornitori.map(f => [f.id, f.nome]))
     barcheAttive.forEach(b => {
       const fn = fornMap.get(b.fornitore_id) || '—'
-      if (usciteIds.has(b.id)) uscite.push({ nome: b.nome, fornitore: fn })
+      if (impegnateIds.has(b.id)) uscite.push({ nome: b.nome, fornitore: fn })
       else if (bloccoByBarca[b.id]) {
         const blk = bloccoByBarca[b.id]
         bloccate.push({ nome: b.nome, fornitore: fn, motivo: (blk.note || blk.motivo || 'Indisponibilità') })
@@ -243,22 +244,6 @@ export default function RiepilogoUscite() {
         </button>
       </div>
 
-      {/* Riepilogo card */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-        <div style={{ background: P.primaryLt, borderRadius: 10, padding: "12px 18px" }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: P.primary }}>{righe.length}</div>
-          <div style={{ fontSize: 12, color: P.muted }}>Barche uscite</div>
-        </div>
-        <div style={{ background: P.accentLt, borderRadius: 10, padding: "12px 18px" }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: P.accent }}>{totali.uscite}</div>
-          <div style={{ fontSize: 12, color: P.muted }}>Uscite totali</div>
-        </div>
-        <div style={{ background: P.headerBg, borderRadius: 10, padding: "12px 18px" }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: P.text }}>{totali.pax.toLocaleString('it-IT')}</div>
-          <div style={{ fontSize: 12, color: P.muted }}>Passeggeri imbarcati</div>
-        </div>
-      </div>
-
       {/* ⭐ Analisi disponibilità (solo su singolo giorno) */}
       {analisiGiorno && (
         <div style={{ background: P.card, borderRadius: 12, border: `1px solid ${P.border}`, padding: 16, marginBottom: 16 }}>
@@ -266,12 +251,12 @@ export default function RiepilogoUscite() {
             📅 Analisi disponibilità del giorno
           </div>
           <div style={{ fontSize: 13, color: P.muted, marginBottom: 14 }}>
-            Su {analisiGiorno.totaleAttive} barche attive: {analisiGiorno.uscite.length} uscite, {analisiGiorno.disponibiliNonUscite.length} disponibili non uscite, {analisiGiorno.bloccate.length} bloccate.
+            Su {analisiGiorno.totaleAttive} barche attive: {analisiGiorno.uscite.length} impegnate, {analisiGiorno.disponibiliNonUscite.length} disponibili libere, {analisiGiorno.bloccate.length} bloccate.
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
             {/* Uscite */}
             <div style={{ background: P.accentLt, borderRadius: 10, padding: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: P.accent, marginBottom: 8 }}>✅ Uscite ({analisiGiorno.uscite.length})</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: P.accent, marginBottom: 8 }}>🔵 Impegnate ({analisiGiorno.uscite.length})</div>
               {analisiGiorno.uscite.length === 0 ? <div style={{ fontSize: 12, color: P.muted }}>—</div> :
                 analisiGiorno.uscite.map((b, i) => (
                   <div key={i} style={{ fontSize: 12, color: P.text, marginBottom: 3 }}>{b.nome} <span style={{ color: P.muted }}>· {b.fornitore}</span></div>
@@ -279,7 +264,7 @@ export default function RiepilogoUscite() {
             </div>
             {/* Disponibili non uscite */}
             <div style={{ background: '#fffbeb', borderRadius: 10, padding: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: P.orange, marginBottom: 8 }}>🟡 Disponibili non uscite ({analisiGiorno.disponibiliNonUscite.length})</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: P.orange, marginBottom: 8 }}>🟢 Disponibili libere ({analisiGiorno.disponibiliNonUscite.length})</div>
               {analisiGiorno.disponibiliNonUscite.length === 0 ? <div style={{ fontSize: 12, color: P.muted }}>—</div> :
                 analisiGiorno.disponibiliNonUscite.map((b, i) => (
                   <div key={i} style={{ fontSize: 12, color: P.text, marginBottom: 3 }}>{b.nome} <span style={{ color: P.muted }}>· {b.fornitore}</span></div>
@@ -295,7 +280,7 @@ export default function RiepilogoUscite() {
             </div>
           </div>
           <div style={{ fontSize: 12, color: P.muted, marginTop: 12, fontStyle: "italic" }}>
-            Le barche non uscite erano disponibili (potevano lavorare) o bloccate dal socio per impegno esterno. Le bloccate non concorrono alla rotazione di quel giorno.
+            Impegnate = con prenotazione (occupate). Disponibili libere = potevano lavorare ma senza prenotazione. Bloccate = indisponibili per scelta del socio. Solo le disponibili libere avrebbero potuto ricevere un tour.
           </div>
         </div>
       )}
@@ -339,6 +324,22 @@ export default function RiepilogoUscite() {
             </tfoot>
           )}
         </table>
+      </div>
+
+      {/* Riepilogo card (in fondo) */}
+      <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+        <div style={{ background: P.primaryLt, borderRadius: 10, padding: "12px 18px" }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: P.primary }}>{righe.length}</div>
+          <div style={{ fontSize: 12, color: P.muted }}>Barche uscite</div>
+        </div>
+        <div style={{ background: P.accentLt, borderRadius: 10, padding: "12px 18px" }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: P.accent }}>{totali.uscite}</div>
+          <div style={{ fontSize: 12, color: P.muted }}>Uscite totali</div>
+        </div>
+        <div style={{ background: P.headerBg, borderRadius: 10, padding: "12px 18px" }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: P.text }}>{totali.pax.toLocaleString('it-IT')}</div>
+          <div style={{ fontSize: 12, color: P.muted }}>Passeggeri imbarcati</div>
+        </div>
       </div>
     </div>
   )
