@@ -20,6 +20,7 @@ interface Imbarcazione {
   capacita_massima: number
   capacita_collettiva_override: number | null
   tour_collettivi_attivi: boolean
+  minimo_pax_collettivo?: number | null
   fornitore_id: string
   ordine: number
 }
@@ -30,6 +31,7 @@ interface StoricoRow {
   fornitore_nome: string
   data_servizio: string
   numero_persone: number
+  servizio_tipo?: string
 }
 interface Assegnata {
   imbarcazione_id: string
@@ -53,76 +55,82 @@ function shipSize(pax: number) {
 }
 
 // ── ROTATION ALGORITHM ──────────────────────────────────────────────────
+// modalita: 'collettivi' (solo barche tour_collettivi_attivi, storico tour_collettivo)
+//           'privati'    (tutte le barche attive, storico ≠ tour_collettivo)
 function computeRotation(
   imbarcazioni: Imbarcazione[],
   fornitori: Fornitore[],
   storico: StoricoRow[],
   assegnateOggi: Assegnata[],
-  naveDate: string
-): { barca: Imbarcazione; fornitore: Fornitore; score: number; reason: string; selected: boolean }[] {
+  naveDate: string,
+  modalita: 'collettivi' | 'privati'
+): { barca: Imbarcazione; fornitore: Fornitore; score: number; reason: string; selected: boolean; posizione: number; disponibile: boolean; uscite: number }[] {
 
-  // Count historical usage per supplier (last 60 days)
+  // ⭐ Barche ammesse in base alla modalità
+  const barcheAmmesse = modalita === 'collettivi'
+    ? imbarcazioni.filter(b => b.tour_collettivi_attivi)
+    : imbarcazioni // privati: tutte le attive (già filtrate a monte)
+
+  // ⭐ Storico filtrato per tipo servizio
+  const storicoFiltrato = storico.filter(s => {
+    const t = (s.servizio_tipo || '').toLowerCase()
+    return modalita === 'collettivi' ? t === 'tour_collettivo' : t !== 'tour_collettivo'
+  })
+
+  // Count historical usage per supplier / boat (nel periodo dello storico)
   const usageByFornitore: Record<string, number> = {}
   const usageByBarca: Record<string, number> = {}
-  const lastUsedBarca: Record<string, string> = {} // barca_id -> last date
 
-  const _rotCutoff = new Date(); _rotCutoff.setDate(_rotCutoff.getDate() - 60)
-  const _rotCutoffStr = _rotCutoff.toISOString().split('T')[0]
-  storico.forEach(s => {
-    if (s.data_servizio < _rotCutoffStr) return
+  storicoFiltrato.forEach(s => {
     usageByFornitore[s.fornitore_id] = (usageByFornitore[s.fornitore_id] || 0) + 1
     usageByBarca[s.imbarcazione_nome] = (usageByBarca[s.imbarcazione_nome] || 0) + 1
   })
 
-  // Boats already booked on this date
+  // Boats already booked on this date (impegnate → ESCLUSE dalla rotazione)
   const bookedToday = new Set(assegnateOggi.filter(a => a.data_servizio === naveDate).map(a => a.imbarcazione_id))
 
-  // Map fornitore id -> name
   const fornitoreMap = new Map(fornitori.map(f => [f.id, f]))
 
-  // Total usage across all suppliers to compute fairness
   const totalUsage = Object.values(usageByFornitore).reduce((a, b) => a + b, 0) || 1
-  const numFornitori = new Set(imbarcazioni.map(b => b.fornitore_id)).size || 1
+  const numFornitori = new Set(barcheAmmesse.map(b => b.fornitore_id)).size || 1
   const fairShare = totalUsage / numFornitori
 
-  // Score each boat (lower = should be prioritized)
-  const scored = imbarcazioni.map(barca => {
+  // Score ogni barca ammessa (lower = priorità). Le impegnate sono escluse.
+  const scored = barcheAmmesse.map(barca => {
     const fornitore = fornitoreMap.get(barca.fornitore_id) || { id: barca.fornitore_id, nome: 'N/D' }
     const fornUsage = usageByFornitore[barca.fornitore_id] || 0
     const barcaUsage = usageByBarca[barca.nome] || 0
     const isBooked = bookedToday.has(barca.id)
 
-    // Score: lower = higher priority
-    // Weighted: 60% supplier fairness, 30% boat fairness, 10% capacity
-    const supplierScore = fornUsage / fairShare // <1 means underused
-    const boatScore = barcaUsage / (totalUsage / imbarcazioni.length || 1)
+    const supplierScore = fornUsage / fairShare
+    const boatScore = barcaUsage / (totalUsage / (barcheAmmesse.length || 1) || 1)
     const score = supplierScore * 0.6 + boatScore * 0.3
 
     let reason = ''
-    if (isBooked) reason = '⚠️ Già prenotata per questa data'
-    else if (supplierScore < 0.5) reason = '🟢 Fornitore sottoutilizzato — priorità alta'
+    if (supplierScore < 0.5) reason = '🟢 Fornitore sottoutilizzato — priorità alta'
     else if (supplierScore < 0.8) reason = '🟡 Buon bilanciamento'
     else if (supplierScore < 1.2) reason = '🔵 Nella media'
     else reason = '🟠 Fornitore molto utilizzato — dare precedenza ad altri'
 
     return {
-      barca,
-      fornitore,
-      score,
-      reason,
-      selected: !isBooked && supplierScore <= 1.2, // auto-select underused
+      barca, fornitore, score, reason,
+      selected: !isBooked && supplierScore <= 1.2,
+      posizione: 0,
+      disponibile: !isBooked,
+      uscite: barcaUsage,
     }
   })
 
-  // Sort: unbooked first, then by score ascending (underused first)
-  scored.sort((a, b) => {
-    const aBooked = bookedToday.has(a.barca.id) ? 1 : 0
-    const bBooked = bookedToday.has(b.barca.id) ? 1 : 0
-    if (aBooked !== bBooked) return aBooked - bBooked
-    return a.score - b.score
-  })
+  // ⭐ ESCLUDI le barche impegnate per questa data
+  const disponibili = scored.filter(s => s.disponibile)
 
-  return scored
+  // Ordina per score ascendente (sottoutilizzate = priorità)
+  disponibili.sort((a, b) => a.score - b.score)
+
+  // Assegna posizione in coda (1 = prossima di turno)
+  disponibili.forEach((s, i) => { s.posizione = i + 1 })
+
+  return disponibili
 }
 
 // ── COMPONENT ───────────────────────────────────────────────────────────
@@ -138,6 +146,7 @@ export default function RotazioneBarche() {
   const [selectedNaveIdx, setSelectedNaveIdx] = useState(0)
   const [selections, setSelections] = useState<Record<string, boolean>>({})
   const [filterTipo, setFilterTipo] = useState('all')
+  const [modalitaRotazione, setModalitaRotazione] = useState<'collettivi' | 'privati'>('collettivi')
 
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null)
@@ -161,8 +170,8 @@ export default function RotazioneBarche() {
   // Compute rotation suggestion
   const rotation = useMemo(() => {
     if (!selectedNave || imbarcazioni.length === 0) return []
-    return computeRotation(imbarcazioni, fornitori, storico, assegnate, selectedNave.data_arrivo)
-  }, [selectedNave, imbarcazioni, fornitori, storico, assegnate])
+    return computeRotation(imbarcazioni, fornitori, storico, assegnate, selectedNave.data_arrivo, modalitaRotazione)
+  }, [selectedNave, imbarcazioni, fornitori, storico, assegnate, modalitaRotazione])
 
   // Initialize selections from algorithm
   useEffect(() => {
@@ -185,6 +194,17 @@ export default function RotazioneBarche() {
     if (filterTipo === 'all') return rotation
     return rotation.filter(r => r.barca.tipo === filterTipo)
   }, [rotation, filterTipo])
+
+  // ⭐ Barche escluse perché impegnate nella data selezionata (per trasparenza soci)
+  const barcheImpegnate = useMemo(() => {
+    if (!selectedNave) return []
+    const naveDate = selectedNave.data_arrivo
+    const bookedIds = new Set(assegnate.filter(a => a.data_servizio === naveDate).map(a => a.imbarcazione_id))
+    const ammesse = modalitaRotazione === 'collettivi'
+      ? imbarcazioni.filter(b => b.tour_collettivi_attivi)
+      : imbarcazioni
+    return ammesse.filter(b => bookedIds.has(b.id))
+  }, [selectedNave, assegnate, imbarcazioni, modalitaRotazione])
 
   // Stats for selected boats
   const selStats = useMemo(() => {
@@ -311,6 +331,25 @@ export default function RotazioneBarche() {
 
       {/* ── Filters + summary row ── */}
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+        {/* ⭐ Toggle rotazione Collettivi / Privati */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: P.muted }}>Rotazione</span>
+          <div style={{ display: "inline-flex", border: `1px solid ${P.border}`, borderRadius: 8, overflow: "hidden" }}>
+            <button
+              onClick={() => setModalitaRotazione('collettivi')}
+              style={{ fontSize: 14, fontWeight: 600, padding: "8px 16px", border: "none", cursor: "pointer",
+                background: modalitaRotazione === 'collettivi' ? P.primary : P.bg,
+                color: modalitaRotazione === 'collettivi' ? '#fff' : P.text }}
+            >Tour Collettivi</button>
+            <button
+              onClick={() => setModalitaRotazione('privati')}
+              style={{ fontSize: 14, fontWeight: 600, padding: "8px 16px", border: "none", cursor: "pointer",
+                background: modalitaRotazione === 'privati' ? P.primary : P.bg,
+                color: modalitaRotazione === 'privati' ? '#fff' : P.text }}
+            >Tour Privati</button>
+          </div>
+        </div>
+
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: P.muted }}>Tipo imbarcazione</span>
           <select value={filterTipo} onChange={e => setFilterTipo(e.target.value)} style={{ fontSize: 14, padding: "8px 12px", border: `1px solid ${P.border}`, borderRadius: 8, outline: "none", background: P.bg, color: P.text, cursor: "pointer" }}>
@@ -348,7 +387,7 @@ export default function RotazioneBarche() {
             <tbody>
               {filteredRotation.map((r, i) => {
                 const isSelected = selections[r.barca.id]
-                const isBooked = r.reason.startsWith('⚠️')
+                const isBooked = !r.disponibile
                 const cap = r.barca.capacita_collettiva_override || r.barca.capacita_massima
                 return (
                   <tr key={r.barca.id}
@@ -373,7 +412,10 @@ export default function RotazioneBarche() {
                         {isSelected ? "✓" : ""}
                       </div>
                     </td>
-                    <td style={{ ...tdStyle(P), fontWeight: 700 }}>{r.barca.nome}</td>
+                    <td style={{ ...tdStyle(P), fontWeight: 700 }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 22, height: 22, marginRight: 8, borderRadius: 6, background: r.posizione === 1 ? P.accent : P.headerBg, color: r.posizione === 1 ? '#fff' : P.muted, fontSize: 12, fontWeight: 700 }}>{r.posizione}</span>
+                      {r.barca.nome}
+                    </td>
                     <td style={tdStyle(P)}>
                       <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: P.headerBg, color: P.muted, fontWeight: 500 }}>
                         {r.barca.tipo}
@@ -391,6 +433,13 @@ export default function RotazioneBarche() {
             </tbody>
           </table>
         </div>
+        {barcheImpegnate.length > 0 && (
+          <div style={{ marginTop: 12, padding: "10px 14px", background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#991b1b' }}>
+            <strong>⚓ Escluse dalla rotazione (già impegnate in questa data):</strong>{' '}
+            {barcheImpegnate.map(b => b.nome).join(', ')}.
+            <span style={{ color: '#7f1d1d', opacity: 0.8 }}> Non concorrono al turno perché non disponibili nel giorno selezionato.</span>
+          </div>
+        )}
       </div>
 
       {/* ── Two-column: fairness gauge + historical usage ── */}

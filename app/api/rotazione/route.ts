@@ -24,10 +24,12 @@ export async function GET(request: NextRequest) {
     if (errNavi) return NextResponse.json({ error: errNavi.message }, { status: 500 })
 
     // ── 2. Imbarcazioni attive con fornitore ────────────────────────
+    // Carichiamo TUTTE le barche attive; il flag tour_collettivi_attivi
+    // permette al frontend di distinguere la rotazione collettivi da quella privati.
     const { data: imbarcazioni, error: errImb } = await supabase
       .from('imbarcazioni')
-      .select('id, nome, tipo, categoria, capacita_massima, capacita_collettiva_override, tour_collettivi_attivi, fornitore_id, ordine')
-      .eq('tour_collettivi_attivi', true)
+      .select('id, nome, tipo, categoria, capacita_massima, capacita_collettiva_override, tour_collettivi_attivi, minimo_pax_collettivo, fornitore_id, ordine')
+      .eq('attiva', true)
       .order('ordine', { ascending: true })
 
     if (errImb) return NextResponse.json({ error: errImb.message }, { status: 500 })
@@ -40,13 +42,13 @@ export async function GET(request: NextRequest) {
 
     if (errForn) return NextResponse.json({ error: errForn.message }, { status: 500 })
 
-    // ── 4. Storico prenotazioni ultimi 60 giorni ────────────────────
+    // ── 4. Storico prenotazioni ultimi 365 giorni ───────────────────
     const sixtyDaysAgo = new Date()
     sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 365)
 
     const { data: storico, error: errStor } = await supabase
       .from('vista_prenotazioni_complete')
-      .select('imbarcazione_nome, fornitore_id, fornitore_nome, data_servizio, numero_persone')
+      .select('imbarcazione_nome, fornitore_id, fornitore_nome, data_servizio, numero_persone, servizio_tipo')
       .not('stato', 'eq', 'cancellata')
       .gte('data_servizio', sixtyDaysAgo.toISOString().split('T')[0])
       .order('data_servizio', { ascending: false })
