@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 
     const { data: storico, error: errStor } = await supabase
       .from('vista_prenotazioni_complete')
-      .select('imbarcazione_nome, fornitore_id, fornitore_nome, data_servizio, numero_persone, servizio_tipo')
+      .select('imbarcazione_id, imbarcazione_nome, fornitore_id, fornitore_nome, data_servizio, numero_persone, servizio_tipo, stato')
       .not('stato', 'eq', 'cancellata')
       .gte('data_servizio', sixtyDaysAgo.toISOString().split('T')[0])
       .order('data_servizio', { ascending: false })
