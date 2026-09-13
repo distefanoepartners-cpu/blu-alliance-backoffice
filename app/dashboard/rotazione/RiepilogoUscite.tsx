@@ -134,20 +134,27 @@ export default function RiepilogoUscite() {
     })
     const map: Record<string, {
       barca: string; fornitore: string;
-      giorni: Set<string>;  // date distinte = uscite (barca+giorno = 1 uscita)
+      giorni: Set<string>;         // tutti i giorni con uscita
+      giorniPriv: Set<string>;     // giorni con almeno un privato
+      giorniColl: Set<string>;     // giorni con almeno un collettivo
       pax: number;
     }> = {}
     validi.forEach(s => {
       const key = s.imbarcazione_id || s.imbarcazione_nome
-      if (!map[key]) map[key] = { barca: s.imbarcazione_nome || '—', fornitore: s.fornitore_nome || '—', giorni: new Set(), pax: 0 }
-      map[key].giorni.add(s.data_servizio || '')  // stessa barca+giorno = 1 uscita
-      map[key].pax += s.numero_persone || 0        // pax sempre sommati
+      if (!map[key]) map[key] = { barca: s.imbarcazione_nome || '—', fornitore: s.fornitore_nome || '—', giorni: new Set(), giorniPriv: new Set(), giorniColl: new Set(), pax: 0 }
+      const d = s.data_servizio || ''
+      map[key].giorni.add(d)
+      if ((s.servizio_tipo || '').toLowerCase() === 'tour_collettivo') map[key].giorniColl.add(d)
+      else map[key].giorniPriv.add(d)
+      map[key].pax += s.numero_persone || 0
     })
     return Object.values(map)
       .map(m => ({
         barca: m.barca,
         fornitore: m.fornitore,
-        uscite: m.giorni.size,  // numero di giorni distinti = uscite reali
+        uscite: m.giorni.size,
+        uscitePriv: m.giorniPriv.size,
+        usciteColl: m.giorniColl.size,
         pax: m.pax,
       }))
       .sort((a, b) => b.uscite - a.uscite)
@@ -155,6 +162,8 @@ export default function RiepilogoUscite() {
 
   const totali = useMemo(() => ({
     uscite: righe.reduce((s, r) => s + r.uscite, 0),
+    uscitePriv: righe.reduce((s, r) => s + r.uscitePriv, 0),
+    usciteColl: righe.reduce((s, r) => s + r.usciteColl, 0),
     pax: righe.reduce((s, r) => s + r.pax, 0),
   }), [righe])
 
@@ -239,22 +248,22 @@ export default function RiepilogoUscite() {
   }, [giornoSingolo, imbarcazioni, storico, blocchi, postiEsterni, ns3000OccupateIds, fornitori, fornitoreFiltro])
 
   async function esportaExcel() {
-    const header = ['Barca', 'Fornitore', 'N° Uscite', 'N° Passeggeri']
-    const dati = righe.map(r => [r.barca, r.fornitore, r.uscite, r.pax])
+    const header = ['Barca', 'Fornitore', 'Totale Uscite', 'di cui Private', 'di cui Collettive', 'N° Passeggeri']
+    const dati = righe.map(r => [r.barca, r.fornitore, r.uscite, r.uscitePriv, r.usciteColl, r.pax])
     const periodo = dataDal || dataAl ? `${dataDal || '...'}_${dataAl || '...'}` : 'totale'
     const filename = `riepilogo_uscite_${periodo}.xlsx`
 
     try {
       const XLSX = await import('xlsx')
-      const wsData = [header, ...dati, [], ['TOTALE', '', totali.uscite, totali.pax]]
+      const wsData = [header, ...dati, [], ['TOTALE', '', totali.uscite, totali.uscitePriv, totali.usciteColl, totali.pax]]
       const ws = XLSX.utils.aoa_to_sheet(wsData)
-      ws['!cols'] = [{ wch: 28 }, { wch: 32 }, { wch: 12 }, { wch: 14 }]
+      ws['!cols'] = [{ wch: 28 }, { wch: 32 }, { wch: 13 }, { wch: 13 }, { wch: 15 }, { wch: 14 }]
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Riepilogo Uscite')
       XLSX.writeFile(wb, filename)
     } catch {
       // fallback CSV se xlsx non disponibile
-      const rows = [header, ...dati, [], ['TOTALE', '', totali.uscite, totali.pax]]
+      const rows = [header, ...dati, [], ['TOTALE', '', totali.uscite, totali.uscitePriv, totali.usciteColl, totali.pax]]
       const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n')
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
       const url = URL.createObjectURL(blob)
@@ -375,18 +384,22 @@ export default function RiepilogoUscite() {
             <tr>
               <th style={thStyle}>Barca</th>
               <th style={thStyle}>Fornitore</th>
-              <th style={{ ...thStyle, textAlign: "right" }}>N° Uscite</th>
+              <th style={{ ...thStyle, textAlign: "right" }}>Totale Uscite</th>
+              <th style={{ ...thStyle, textAlign: "right" }}>di cui Private</th>
+              <th style={{ ...thStyle, textAlign: "right" }}>di cui Collettive</th>
               <th style={{ ...thStyle, textAlign: "right" }}>N° Passeggeri</th>
             </tr>
           </thead>
           <tbody>
             {righe.length === 0 ? (
-              <tr><td colSpan={4} style={{ ...tdStyle, textAlign: "center", color: P.muted, padding: 30 }}>Nessuna uscita nel periodo selezionato</td></tr>
+              <tr><td colSpan={6} style={{ ...tdStyle, textAlign: "center", color: P.muted, padding: 30 }}>Nessuna uscita nel periodo selezionato</td></tr>
             ) : righe.map((r, i) => (
               <tr key={i} style={{ background: i % 2 === 0 ? "transparent" : P.bg }}>
                 <td style={{ ...tdStyle, fontWeight: 700 }}>{r.barca}</td>
                 <td style={{ ...tdStyle, color: P.primary, fontWeight: 600 }}>{r.fornitore}</td>
                 <td style={{ ...tdStyle, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{r.uscite}</td>
+                <td style={{ ...tdStyle, textAlign: "right", fontVariantNumeric: "tabular-nums", color: '#0047AB' }}>{r.uscitePriv}</td>
+                <td style={{ ...tdStyle, textAlign: "right", fontVariantNumeric: "tabular-nums", color: '#00875a' }}>{r.usciteColl}</td>
                 <td style={{ ...tdStyle, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.pax.toLocaleString('it-IT')}</td>
               </tr>
             ))}
@@ -397,6 +410,8 @@ export default function RiepilogoUscite() {
                 <td style={{ ...tdStyle, fontWeight: 800 }}>TOTALE</td>
                 <td style={tdStyle}></td>
                 <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800 }}>{totali.uscite}</td>
+                <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, color: '#0047AB' }}>{totali.uscitePriv}</td>
+                <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, color: '#00875a' }}>{totali.usciteColl}</td>
                 <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800 }}>{totali.pax.toLocaleString('it-IT')}</td>
               </tr>
             </tfoot>
