@@ -119,20 +119,19 @@ export default function RendicontoContabile({ lockedFornitoreId, fornitoreLabel 
     return sorted
   }, [aggregatedPrenotazioni, sortCol, sortDir])
 
-  const enriched = useMemo(
-    () => rows.map((r) => {
-      const perc = r.percentuale_commissione ?? DEFAULT_RATE
+       const perc = r.percentuale_commissione ?? DEFAULT_RATE
       const lordo = r.prezzo_totale || 0
-      const commissione = lordo * (perc / 100)
+      // ⭐ Commissione: se c'è la scontata usa quella, altrimenti lordo × %
+      const commScontata = (r as any).commissione_scontata
+      const commissione = (commScontata != null && !isNaN(Number(commScontata)))
+        ? Number(commScontata)
+        : lordo * (perc / 100)
       // ⭐ Forfettario dal 1/8/2026: BA incassa solo la commissione, non eroga nulla al socio
       // (il socio ha già incassato dal cliente). Prima/normali: BA incassa il pieno e eroga il saldo.
       const isForfAgosto = !!(r as any).forfettario && (r.data_servizio || '') >= '2026-08-01'
       const incassatoBA = isForfAgosto ? commissione : lordo
-      const saldoFornitore = isForfAgosto ? 0 : lordo * (1 - perc / 100)
+      const saldoFornitore = isForfAgosto ? 0 : (lordo - commissione)
       return { ...r, commissione, saldoFornitore, incassatoBA, isForfAgosto }
-    }),
-    [rows]
-  )
 
   const totals = useMemo(
     () => enriched.reduce((acc, r) => ({

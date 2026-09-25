@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('vista_prenotazioni_complete')
-      .select('id, data_servizio, servizio_nome, imbarcazione_id, imbarcazione_nome, percentuale_commissione, fornitore_id, fornitore_nome, numero_persone, prezzo_totale, stato')
+      .select('id, data_servizio, servizio_nome, imbarcazione_id, imbarcazione_nome, percentuale_commissione, fornitore_id, fornitore_nome, numero_persone, prezzo_totale, commissione_scontata, stato')
       .not('stato', 'eq', 'cancellata')
       .order('data_servizio', { ascending: false })
 
@@ -62,6 +62,7 @@ export async function GET(request: NextRequest) {
         forfettario: forfettarioById[p.fornitore_id] || false,
         numero_persone: p.numero_persone,
         prezzo_totale: p.prezzo_totale,
+        commissione_scontata: p.commissione_scontata != null ? Number(p.commissione_scontata) : null,
         stato: p.stato,
       }
     })
