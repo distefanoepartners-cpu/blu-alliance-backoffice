@@ -270,10 +270,15 @@ function openEstrattoModal(fornitore: any) {
         commissioni: 0,
         netto: 0
       }
-      const baseForf = fornitoreSelezionato.forfettario ? (totali.fatturato / 1.22) : totali.fatturato
-      totali.commissioni = Math.round(baseForf * (fornitoreSelezionato.percentuale_commissione || 25)) / 100
-      totali.netto = Math.round((baseForf - totali.commissioni) * 100) / 100
-
+            const percComm = fornitoreSelezionato.percentuale_commissione || 25
+      // ⭐ Commissione per riga: scontata se presente, altrimenti base × %.
+      totali.commissioni = Math.round((prenotazioni || []).reduce((sum: number, p: any) => {
+        const cs = p.commissione_scontata
+        if (cs != null && !isNaN(Number(cs))) return sum + Number(cs)
+        const base = fornitoreSelezionato.forfettario ? (Number(p.prezzo_totale || 0) / 1.22) : Number(p.prezzo_totale || 0)
+        return sum + base * (percComm / 100)
+      }, 0) * 100) / 100
+      totali.netto = Math.round((totali.fatturato - totali.commissioni) * 100) / 100
       const response = await fetch('/api/genera-estratto-conto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -325,9 +330,15 @@ function openEstrattoModal(fornitore: any) {
         commissioni: 0,
         netto: 0
       }
-      const baseForf = fornitoreSelezionato.forfettario ? (totali.fatturato / 1.22) : totali.fatturato
-      totali.commissioni = Math.round(baseForf * (fornitoreSelezionato.percentuale_commissione || 25)) / 100
-      totali.netto = Math.round((baseForf - totali.commissioni) * 100) / 100
+            const percComm = fornitoreSelezionato.percentuale_commissione || 25
+      // ⭐ Commissione per riga: scontata se presente, altrimenti base × %.
+      totali.commissioni = Math.round((prenotazioni || []).reduce((sum: number, p: any) => {
+        const cs = p.commissione_scontata
+        if (cs != null && !isNaN(Number(cs))) return sum + Number(cs)
+        const base = fornitoreSelezionato.forfettario ? (Number(p.prezzo_totale || 0) / 1.22) : Number(p.prezzo_totale || 0)
+        return sum + base * (percComm / 100)
+      }, 0) * 100) / 100
+      totali.netto = Math.round((totali.fatturato - totali.commissioni) * 100) / 100
 
       const response = await fetch('/api/invia-estratto-conto', {
         method: 'POST',
