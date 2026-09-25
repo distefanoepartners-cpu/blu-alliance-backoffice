@@ -65,6 +65,7 @@ export async function PUT(
     if (body.barca_esterna_nome !== undefined) updateData.barca_esterna_nome = body.barca_esterna_nome || null
     if (body.fornitore_id !== undefined) updateData.fornitore_id = body.fornitore_id || null
     if (body.percentuale_commissione_override !== undefined) updateData.percentuale_commissione_override = body.percentuale_commissione_override ?? null
+        if (body.commissione_scontata !== undefined) updateData.commissione_scontata = body.commissione_scontata ?? null
     if (body.data_servizio !== undefined) updateData.data_servizio = body.data_servizio
     if (body.ora_inizio !== undefined) updateData.ora_inizio = body.ora_inizio || null
     if (body.ora_imbarco !== undefined) updateData.ora_imbarco = body.ora_imbarco || null
