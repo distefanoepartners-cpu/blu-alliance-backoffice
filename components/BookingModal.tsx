@@ -250,7 +250,7 @@ export default function BookingModal({
     } else if (isOpen && !prenotazione) {
  setFormData({
         codice_prenotazione: generateCodice(), cliente_id: '', servizio_id: '',
-        imbarcazione_id: initialImbarcazioneId || '', barca_esterna_nome: '', fornitore_id: '', percentuale_commissione_override: '', data_servizio: initialDate || '',
+        imbarcazione_id: initialImbarcazioneId || '', barca_esterna_nome: '', fornitore_id: '', percentuale_commissione_override: '', commissione_scontata: '', data_servizio: initialDate || '',
         ora_inizio: '', numero_persone: 1,
         bambini_over_3: 0, bambini_under_3: 0,
         stato: 'in_attesa', prezzo_totale: 0,
