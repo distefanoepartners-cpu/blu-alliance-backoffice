@@ -98,6 +98,7 @@ export async function POST(request: Request) {
       barca_esterna_nome: body.barca_esterna_nome || null,
       fornitore_id: body.fornitore_id || null,
       percentuale_commissione_override: body.percentuale_commissione_override ?? null,
+      commissione_scontata: body.commissione_scontata ?? null,
       data_servizio: body.data_servizio,
       ora_inizio: body.ora_inizio || null,
       ora_imbarco: body.ora_imbarco || null,
