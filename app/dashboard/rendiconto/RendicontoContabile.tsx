@@ -93,16 +93,26 @@ export default function RendicontoContabile({ lockedFornitoreId, fornitoreLabel 
     })
 
     grouped.forEach(group => {
-      if (group.length === 1) {
+           if (group.length === 1) {
         result.push(group[0])
       } else {
         const first = group[0]
+        // ⭐ Somma la commissione EFFETTIVA di ogni prenotazione (scontata se presente, altrimenti piena)
+        const commissioneGruppo = group.reduce((s, p: any) => {
+          const cs = p.commissione_scontata
+          const perc = p.percentuale_commissione ?? DEFAULT_RATE
+          const comm = (cs != null && !isNaN(Number(cs)))
+            ? Number(cs)
+            : (p.prezzo_totale || 0) * (perc / 100)
+          return s + comm
+        }, 0)
         result.push({
           ...first,
           id: `agg-${first.id}`,
           numero_persone: group.reduce((s, p) => s + (p.numero_persone || 0), 0),
           prezzo_totale: group.reduce((s, p) => s + (p.prezzo_totale || 0), 0),
-        })
+          commissione_scontata: commissioneGruppo,
+        } as any)
       }
     })
 
