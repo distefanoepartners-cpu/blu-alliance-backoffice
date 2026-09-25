@@ -125,6 +125,7 @@ export default function BookingModal({
   const [formData, setFormData] = useState({
     codice_prenotazione: '', cliente_id: '', servizio_id: '', imbarcazione_id: '',
     barca_esterna_nome: '', fornitore_id: '', percentuale_commissione_override: '',
+    commissione_scontata: '' as string | number,
     data_servizio: '', ora_inizio: '', numero_persone: 1,
     bambini_over_3: 0, bambini_under_3: 0,
     stato: 'in_attesa',
@@ -160,6 +161,9 @@ export default function BookingModal({
   const commissioneForfettaria = isForfettario
     ? Math.round((formData.prezzo_totale || 0) * commissionePerc) / 100
     : 0
+  // Commissione scontata valida = campo compilato con un numero >= 0
+  const commScontataValida = formData.commissione_scontata !== '' && formData.commissione_scontata !== null &&
+    !isNaN(Number(formData.commissione_scontata)) && Number(formData.commissione_scontata) >= 0
 
 
   useEffect(() => { if (isOpen) loadOptions() }, [isOpen])
@@ -188,6 +192,7 @@ export default function BookingModal({
         barca_esterna_nome: prenotazione.barca_esterna_nome || '',
         fornitore_id: prenotazione.fornitore_id || '',
         percentuale_commissione_override: prenotazione.percentuale_commissione_override ?? '',
+        commissione_scontata: prenotazione.commissione_scontata ?? '',
         data_servizio: prenotazione.data_servizio || '',
         ora_inizio: prenotazione.ora_inizio || '',
        numero_persone: prenotazione.numero_persone || 1,
@@ -526,6 +531,7 @@ export default function BookingModal({
             if (forn && Number(forn.percentuale_commissione) === num) return null
             return num
           })(),
+          commissione_scontata: (formData.commissione_scontata === '' || formData.commissione_scontata == null || isNaN(Number(formData.commissione_scontata))) ? null : Number(formData.commissione_scontata),
           data_servizio: formData.data_servizio,
           ora_inizio: formData.ora_inizio || null,
           numero_persone: formData.numero_persone,
@@ -721,6 +727,7 @@ export default function BookingModal({
             if (forn && Number(forn.percentuale_commissione) === num) return null
             return num
           })(),
+          commissione_scontata: (formData.commissione_scontata === '' || formData.commissione_scontata == null || isNaN(Number(formData.commissione_scontata))) ? null : Number(formData.commissione_scontata),
           data_servizio: formData.data_servizio,
           ora_inizio: formData.ora_inizio || null,
           numero_persone: formData.numero_persone,
@@ -1164,9 +1171,24 @@ export default function BookingModal({
                       </p>
                       <div className="flex items-baseline justify-between bg-white rounded px-3 py-2 border border-amber-200">
                         <span className="text-sm text-gray-600">Commissione BA ({commissionePerc}%) su €{(formData.prezzo_totale || 0).toFixed(2)}</span>
-                        <span className="text-lg font-bold text-amber-700">€{commissioneForfettaria.toFixed(2)}</span>
+                        <span className={`text-lg font-bold ${commScontataValida ? 'text-gray-400 line-through' : 'text-amber-700'}`}>€{commissioneForfettaria.toFixed(2)}</span>
                       </div>
-                      <p className="text-[11px] text-gray-500 mt-1">Da fatturare a {fornitoreCorrente?.ragione_sociale} come incasso Blu Alliance.</p>
+                      <div className="flex items-center justify-between gap-2 mt-2 bg-white rounded px-3 py-2 border border-amber-200">
+                        <label className="text-sm text-gray-600 whitespace-nowrap">Commissione scontata (€)</label>
+                        <input type="number" step="0.01" min="0"
+                          value={formData.commissione_scontata}
+                          onChange={(e) => setFormData(prev => ({ ...prev, commissione_scontata: e.target.value }))}
+                          onFocus={(e) => e.target.select()}
+                          placeholder="—"
+                          className="w-28 px-2 py-1 border border-amber-300 rounded text-sm text-right font-semibold" />
+                      </div>
+                      {commScontataValida && (
+                        <div className="flex items-baseline justify-between mt-1 px-3">
+                          <span className="text-sm text-green-700 font-semibold">Commissione effettiva</span>
+                          <span className="text-lg font-bold text-green-700">€{Number(formData.commissione_scontata).toFixed(2)}</span>
+                        </div>
+                      )}
+                      <p className="text-[11px] text-gray-500 mt-1">Da fatturare a {fornitoreCorrente?.ragione_sociale} come incasso Blu Alliance{commScontataValida ? ' (scontata)' : ''}.</p>
                     </div>
                   )}
                   <div className="grid grid-cols-2 gap-3 mb-3">
