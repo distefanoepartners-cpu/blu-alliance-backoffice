@@ -780,7 +780,7 @@ export default function TourCollettivi() {
                       <td key={`ba-${barca.id}-${day.toISOString()}`} className="border border-gray-100 p-0" style={{ width: '36px', minWidth: '36px' }}>
                         <button
                           onClick={() => {
-                            iif (info.bloccata_da_privato) {
+                            if (info.bloccata_da_privato) {
   const motivo = info.bloccata_da_tour ? 'tour privato' : 'indisponibilità'
   toast.error(`${barca.nome} bloccata (${motivo}) il ${format(day, 'd MMM', { locale: it })}`); return
 }
