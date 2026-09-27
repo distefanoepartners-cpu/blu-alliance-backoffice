@@ -87,6 +87,8 @@ interface CellInfoBA {
   pax: number; paxEsterni: number; capienza: number
   prenotazioni: PrenotazioneCollettiva[]
   bloccata_da_privato: boolean
+  bloccata_da_blocco?: boolean
+  bloccata_da_tour?: boolean
 }
 
 interface PostoEsterno {
@@ -393,7 +395,7 @@ export default function TourCollettivi() {
     const pe = postiEsterni.find(p => p.imbarcazione_id === barca.id && p.data === dateStr)
     const paxEsterni = pe?.posti_occupati || 0
 
-    const bloccata = prenotazioniPrivate.some(p => p.imbarcazione_id === barca.id && p.data_servizio === dateStr)
+       const bloccata = prenotazioniPrivate.some(p => p.imbarcazione_id === barca.id && p.data_servizio === dateStr)
     const bloccataDaBlocco = blocchi.some(b =>
       b.imbarcazione_id === barca.id && b.data_inizio <= dateStr && b.data_fine >= dateStr
     )
@@ -402,9 +404,10 @@ export default function TourCollettivi() {
       paxEsterni,
       capienza,
       prenotazioni: prenCell,
-      bloccata_da_privato: bloccata || bloccataDaBlocco
+      bloccata_da_privato: bloccata || bloccataDaBlocco,
+      bloccata_da_blocco: bloccataDaBlocco,
+      bloccata_da_tour: bloccata
     }
-  }
 
   function getCellColorBA(info: CellInfoBA): string {
     if (info.bloccata_da_privato) return 'bg-purple-100 border-l-purple-500'
@@ -777,7 +780,10 @@ export default function TourCollettivi() {
                       <td key={`ba-${barca.id}-${day.toISOString()}`} className="border border-gray-100 p-0" style={{ width: '36px', minWidth: '36px' }}>
                         <button
                           onClick={() => {
-                            if (info.bloccata_da_privato) { toast.error(`${barca.nome} impegnata con tour privato il ${format(day, 'd MMM', { locale: it })}`); return }
+                            iif (info.bloccata_da_privato) {
+  const motivo = info.bloccata_da_tour ? 'tour privato' : 'indisponibilità'
+  toast.error(`${barca.nome} bloccata (${motivo}) il ${format(day, 'd MMM', { locale: it })}`); return
+}
                             if (info.prenotazioni.length > 0 || info.paxEsterni > 0) { setCellModalData({ barca, date: day, info }); setShowCellModal(true) }
                             else if (isOperatore) { openPostiEsterniModal(barca, day) }
                             else openNewBookingBA(barca, day)
