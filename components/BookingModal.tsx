@@ -388,7 +388,7 @@ export default function BookingModal({
         if (prezzoUnitario && prezzoUnitario > 0) {
           const isTourCollettivo = servizio?.tipo === 'tour_collettivo' || servizio?.tipo === 'taxi_boat'
           // Bambini <3 anni non pagano sui tour collettivi (occupano comunque il posto)
-          const paganti = Math.max(0, (formData.numero_persone || 1) - (formData.bambini_under_3 || 0))
+          const paganti = Math.max(0, (formData.numero_persone || 1))
           const prezzoTotale = isTourCollettivo ? prezzoUnitario * paganti : prezzoUnitario
           setFormData(prev => ({ ...prev, prezzo_totale: prezzoTotale }))
         }
@@ -427,7 +427,7 @@ export default function BookingModal({
             if (prezzoUnitario > 0) {
               const isTourCollettivo = servizio?.tipo === 'tour_collettivo' || servizio?.tipo === 'taxi_boat'
               // Bambini <3 anni non pagano sui tour collettivi (occupano comunque il posto)
-              const paganti = Math.max(0, (formData.numero_persone || 1) - (formData.bambini_under_3 || 0))
+              const paganti = Math.max(0, (formData.numero_persone || 1))
               prezzoTrovato = isTourCollettivo ? prezzoUnitario * paganti : prezzoUnitario
             }
           }
@@ -1068,15 +1068,7 @@ export default function BookingModal({
                     <input type="number" min="0" value={formData.bambini_under_3}
                       onChange={(e) => setFormData(prev => ({ ...prev, bambini_under_3: parseInt(e.target.value) || 0 }))}
                       className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm h-[34px]" />
-                    {(() => {
-                      const srv = servizi.find(s => s.id === formData.servizio_id)
-                      const isCollettivo = srv?.tipo === 'tour_collettivo' || srv?.tipo === 'taxi_boat'
-                      if (isCollettivo && formData.bambini_under_3 > 0) {
-                        return <p className="text-[10px] text-green-600 mt-0.5">✓ Non pagano</p>
-                      }
-                      return null
-                    })()}
-                  </div>
+                     </div>
                 </div>
                 {(formData.bambini_over_3 + formData.bambini_under_3) > formData.numero_persone && (
                   <p className="text-xs text-red-600">⚠️ I bambini ({formData.bambini_over_3 + formData.bambini_under_3}) superano il totale pax ({formData.numero_persone})</p>
