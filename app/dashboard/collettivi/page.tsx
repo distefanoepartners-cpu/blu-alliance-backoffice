@@ -399,7 +399,7 @@ export default function TourCollettivi() {
     const bloccataDaBlocco = blocchi.some(b =>
       b.imbarcazione_id === barca.id && b.data_inizio <= dateStr && b.data_fine >= dateStr
     )
-    return {
+        return {
       pax: paxPrenotati + paxEsterni,
       paxEsterni,
       capienza,
@@ -408,6 +408,7 @@ export default function TourCollettivi() {
       bloccata_da_blocco: bloccataDaBlocco,
       bloccata_da_tour: bloccata
     }
+  }
 
   function getCellColorBA(info: CellInfoBA): string {
     if (info.bloccata_da_privato) return 'bg-purple-100 border-l-purple-500'
