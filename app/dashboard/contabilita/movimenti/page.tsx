@@ -67,6 +67,36 @@ export default function MovimentiPage() {
   const [fornitoreFilter, setFornitoreFilter] = useState('all')
   const [origineFilter, setOrigineFilter] = useState<'all' | 'manuale' | 'auto_prenotazioni'>('all')
 
+  // ⭐ Filtri persistenti: salvati nella sessione del browser, così tornando
+  // dalla modifica / creazione di un movimento il periodo e gli altri filtri restano.
+  const FILTRI_KEY = 'ba_movimenti_filtri'
+  const [filtriPronti, setFiltriPronti] = useState(false)
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(FILTRI_KEY)
+      if (raw) {
+        const f = JSON.parse(raw)
+        if (typeof f.dataInizio === 'string') setDataInizio(f.dataInizio)
+        if (typeof f.dataFine === 'string') setDataFine(f.dataFine)
+        if (f.tipoFilter) setTipoFilter(f.tipoFilter)
+        if (f.categoriaFilter) setCategoriaFilter(f.categoriaFilter)
+        if (f.fornitoreFilter) setFornitoreFilter(f.fornitoreFilter)
+        if (f.origineFilter) setOrigineFilter(f.origineFilter)
+      }
+    } catch { /* sessionStorage non disponibile: si parte senza filtri */ }
+    setFiltriPronti(true)
+  }, [])
+
+  useEffect(() => {
+    if (!filtriPronti) return
+    try {
+      sessionStorage.setItem(FILTRI_KEY, JSON.stringify({
+        dataInizio, dataFine, tipoFilter, categoriaFilter, fornitoreFilter, origineFilter,
+      }))
+    } catch { /* ignora */ }
+  }, [filtriPronti, dataInizio, dataFine, tipoFilter, categoriaFilter, fornitoreFilter, origineFilter])
+
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null)
     try {
@@ -96,7 +126,8 @@ export default function MovimentiPage() {
     }
   }, [dataInizio, dataFine, tipoFilter, categoriaFilter, fornitoreFilter, origineFilter])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  // Carica solo dopo aver ripristinato i filtri salvati (evita un primo caricamento senza periodo)
+  useEffect(() => { if (filtriPronti) fetchData() }, [fetchData, filtriPronti])
 
   const totals = useMemo(() => {
     return movimenti.reduce(

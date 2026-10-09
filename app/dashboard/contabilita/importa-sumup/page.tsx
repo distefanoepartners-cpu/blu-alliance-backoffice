@@ -1,451 +1,421 @@
 'use client'
+import { useRequireRole } from '@/lib/useRequireRole'
 
-import { useState, useMemo, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import Link from 'next/link'
 import { authFetch } from '@/lib/api-client'
-import toast from 'react-hot-toast'
 
-// ═══════════════════════════════════════════════════════════════
-// Import Estratto Conto SumUp → Movimenti Contabili
-// Pagina: /dashboard/contabilita/importa-sumup
-//
-// Flusso:
-//  1. Carica CSV SumUp (Resoconto_transazioni_*.csv)
-//  2. Parsing client-side + categorizzazione automatica per parola chiave
-//  3. Anteprima editabile (correggi categoria riga per riga)
-//  4. Salvataggio via API route (dedup su riferimento_esterno)
-//
-// NB: importa SOLO le uscite (importo negativo). Le entrate PAYOUT sono
-//     gli accrediti aggregati SumUp e vengono ignorate (gli incassi sono
-//     già registrati dalle prenotazioni).
-// ═══════════════════════════════════════════════════════════════
-
-// ⭐ ID categorie contabili (da categorie_contabili)
-const CAT = {
-  MARKETING: '0257366b-db57-4e7a-8ba5-1684fa56821a',     // Marketing e Pubblicità
-  SOFTWARE: 'ab26a165-7283-436a-8789-152cc2a2cc07',       // Software, Licenze, SaaS
-  SPESE_BANCARIE: '6c663e6d-e16e-4e9c-b89d-95eb2bb36768', // Spese Bancarie
-  ACQUISTI: '38fe934f-33a1-4ecb-890f-ba37e2e28c1a',       // Acquisti Merci e Materiali
-  TELEFONIA: 'beb529ae-120b-4f80-aef9-12c52ebe073d',      // Telefonia e Internet
-  COSTI_SERVIZI: '6b5f3a64-b6ef-4e29-be1a-90f0a5cfeea2',  // Costi di Gestione Servizi
-  CONSULENZE: '6ec8a08e-3a16-4d0f-bc7a-5afa3580e694',     // Consulenze Professionali
-  STIPENDI: 'f7a54ecb-a9c8-4579-82ae-2f46a3152859',       // Personale - Stipendi
-  ALTRE_USCITE: 'fe811521-4c5b-4dcc-bbdc-9d4e7a9a2987',   // Altre Uscite
-}
-
-// ⭐ Mappa parola chiave (nel campo Riferimento) → categoria_id.
-// Usata SOLO per spese ricorrenti che NON sono fornitori barche
-// (i fornitori barche vengono riconosciuti dall'anagrafica, vedi categorizza()).
-// L'ordine conta: la prima che matcha vince. '' = lascia "da categorizzare".
-const KEYWORD_MAP: Array<{ match: string; categoria_id: string }> = [
-  // ── Pubblicità / Marketing ──
-  { match: 'FACEBK', categoria_id: CAT.MARKETING },        // Facebook/Meta ads
-  { match: 'FACEBOOK', categoria_id: CAT.MARKETING },
-  { match: 'GOOGLE', categoria_id: CAT.MARKETING },        // Google Ads
-  { match: '100 STAMPE', categoria_id: CAT.MARKETING },    // tipografia: brochure/locandine
-  // ── Software / SaaS ──
-  { match: 'TWILIO', categoria_id: CAT.SOFTWARE },         // WhatsApp/SMS
-  { match: 'VERCEL', categoria_id: CAT.SOFTWARE },
-  { match: 'SUPABASE', categoria_id: CAT.SOFTWARE },
-  { match: 'OPENAI', categoria_id: CAT.SOFTWARE },
-  { match: 'ANTHROPIC', categoria_id: CAT.SOFTWARE },
-  { match: 'TRUSTINDEX', categoria_id: CAT.SOFTWARE },     // gestione recensioni
-  // ── Spese bancarie ──
-  { match: 'SUMUP', categoria_id: CAT.SPESE_BANCARIE },    // canone/commissioni SumUp
-  // ── Acquisti ──
-  { match: 'AMZN', categoria_id: CAT.ACQUISTI },           // Amazon
-  { match: 'AMAZON', categoria_id: CAT.ACQUISTI },
-  // ── Consulenze ──
-  { match: 'TECH-NICOS', categoria_id: CAT.CONSULENZE },   // commercialista
-  { match: 'TECH NICOS', categoria_id: CAT.CONSULENZE },
-  // ── Personale (dipendenti) ──
-  { match: 'WILLIAM LEONE', categoria_id: CAT.STIPENDI },
-  { match: 'MARIAM NAMOUCHI', categoria_id: CAT.STIPENDI },
-  { match: 'SILVIA CORVO', categoria_id: CAT.STIPENDI },
-  // DS&P: volutamente NON mappato → resta "da categorizzare"
-  // (movimenti misti: compensi, riaddebiti, rimborsi)
-]
-
-// Parole troppo comuni: ignorate nel match con l'anagrafica fornitori,
-// per evitare falsi positivi (es. "RENT", "PARTNERS", "CHARTER").
-const STOPWORDS = new Set([
-  'RENT','SRL','SRLS','SAS','SNC','SPA','GROUP','PARTNERS','CHARTER','SEA',
-  'SERVICE','FAMILY','ROYAL','LUCA','LUIGI','MARIA','MARIO','DAVIDE','NELLO',
-  'DELIA','CECERE','FEDERICO','PATRIZIO','DIRECTION','CAPRI','ALFONSO','CRISTINA',
-  'DELLA','DEL','DI'
-])
-
-interface RigaMovimento {
-  data: string            // YYYY-MM-DD
-  codice: string          // Codice transazione SumUp (anti-duplicato)
-  riferimento: string     // descrizione/controparte ripulita
-  importo: number         // valore assoluto (positivo)
-  tipo: 'entrata' | 'uscita'
-  categoria_id: string    // '' = da categorizzare
-  includi: boolean        // se importare questa riga
-}
-
-// Accrediti tecnici da IGNORARE sempre (non sono né quote soci né costi):
-// incassi già contabilizzati dalle prenotazioni o micro-accrediti di servizio.
-const SKIP_ENTRATE = ['PAYOUT', 'STRIPE', 'SUMUP', 'GOOGLE IRELAND', 'GOOGLE ']
-
-function isAccreditoTecnico(riferimento: string): boolean {
-  const up = riferimento.toUpperCase()
-  return SKIP_ENTRATE.some(k => up.includes(k))
-}
-
-function pulisciRiferimento(ref: string): string {
-  return ref.replace(/\s{2,}/g, ' ').trim()
-}
-
-interface Fornitore {
+interface Categoria {
   id: string
-  ragione_sociale: string
-  _tokens: string[]   // token distintivi precalcolati
+  codice: string
+  nome: string
+  tipo: 'entrata' | 'uscita'
+  rilevante_iva: boolean
+}
+interface MetodoPagamento { id: string; nome: string }
+interface Fornitore { id: string; nome: string }
+
+interface Movimento {
+  id: string
+  numero_progressivo: number | null
+  anno: number
+  data_competenza: string
+  data_pagamento: string | null
+  descrizione: string
+  imponibile: number
+  aliquota_iva: number
+  iva: number
+  totale: number
+  tipo: 'entrata' | 'uscita'
+  numero_documento: string | null
+  data_documento: string | null
+  allegato_url: string | null
+  origine: string
+  note: string | null
+  fornitore_descrizione: string | null
+  categoria: Categoria | null
+  metodo_pagamento: MetodoPagamento | null
+  fornitore: { id: string; ragione_sociale: string } | null
 }
 
-function normalizza(s: string): string {
-  return s.toUpperCase().replace(/[.,&'\-]/g, ' ').replace(/\s+/g, ' ').trim()
+const fmt = (n: number) =>
+  new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(n)
+const fmtDate = (iso: string | null) =>
+  iso ? new Date(iso + 'T00:00:00').toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+const fmtDateFile = (iso: string) => (iso ? iso.replace(/-/g, '') : 'all')
+
+const P = {
+  bg: '#f8f9fc', card: '#fff', border: '#e2e6ef', text: '#1a1f36', muted: '#6b7394',
+  primary: '#0047AB', primaryLt: '#e8f0fe', accent: '#00875a', accentLt: '#dcfce7',
+  orange: '#e07c00', red: '#de350b', redLt: '#fee2e2',
+  headerBg: '#f1f3f9',
 }
 
-// Token distintivi = parole >3 char che non sono forme societarie/nomi comuni
-function tokenDistintivi(s: string): string[] {
-  return normalizza(s).split(' ').filter(w => w.length > 3 && !STOPWORDS.has(w))
-}
-
-// Categorizzazione a livelli:
-//  1. Match con anagrafica fornitori (match rigoroso: TUTTI i token distintivi
-//     del fornitore devono comparire nel riferimento) → Costi di Gestione Servizi
-//  2. Mappa keyword (spese ricorrenti non-fornitore)
-//  3. '' → da categorizzare a mano
-function categorizza(riferimento: string, fornitori: Fornitore[]): string {
-  const rif = ' ' + normalizza(riferimento) + ' '
-
-  // Livello 1: anagrafica fornitori (i fornitori barche, anche nuovi)
-  for (const f of fornitori) {
-    if (f._tokens.length === 0) continue
-    const allHit = f._tokens.every(t => rif.includes(' ' + t + ' ') || rif.includes(' ' + t))
-    if (allHit) return CAT.COSTI_SERVIZI
-  }
-
-  // Livello 2: mappa keyword (spese ricorrenti)
-  const up = riferimento.toUpperCase()
-  for (const k of KEYWORD_MAP) {
-    if (up.includes(k.match)) return k.categoria_id
-  }
-
-  // Livello 3: manuale
-  return ''
-}
-
-// Parser CSV per il formato SumUp (5 colonne: Data, Codice, Riferimento, Importo, Saldo)
-function parseCsvSumUp(text: string, fornitori: Fornitore[]): RigaMovimento[] {
-  const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0)
-  if (lines.length < 2) return []
-
-  const righe: RigaMovimento[] = []
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i]
-    const parts = line.split(',')
-    if (parts.length < 5) continue
-
-    const data = parts[0].trim()
-    const codice = parts[1].trim()
-    const importoRaw = parts[parts.length - 2].trim()
-    const riferimento = pulisciRiferimento(parts.slice(2, parts.length - 2).join(','))
-
-    const importo = parseFloat(importoRaw)
-    if (isNaN(importo)) continue
-
-    if (importo < 0) {
-      // ── USCITA: categorizzazione automatica ──
-      righe.push({
-        data,
-        codice,
-        riferimento,
-        importo: Math.abs(importo),
-        tipo: 'uscita',
-        categoria_id: categorizza(riferimento, fornitori),
-        includi: true,
-      })
-    } else {
-      // ── ENTRATA: salta gli accrediti tecnici (PAYOUT, Stripe, SumUp, Google).
-      //    Le altre (quote soci come Andreffe, Dolce Vita) → da categorizzare a mano. ──
-      if (isAccreditoTecnico(riferimento)) continue
-      righe.push({
-        data,
-        codice,
-        riferimento,
-        importo: Math.abs(importo),
-        tipo: 'entrata',
-        categoria_id: '', // sempre manuale per le entrate
-        includi: true,
-      })
-    }
-  }
-  return righe
-}
-
-export default function ImportaSumUpPage() {
-  const [righe, setRighe] = useState<RigaMovimento[]>([])
-  const [categorie, setCategorie] = useState<Array<{ id: string; nome: string }>>([])
+export default function MovimentiPage() {
+  const { authorized, loading: authLoading } = useRequireRole(['admin'])
+  const [movimenti, setMovimenti] = useState<Movimento[]>([])
   const [fornitori, setFornitori] = useState<Fornitore[]>([])
-  const [fileName, setFileName] = useState('')
-  const [pendingText, setPendingText] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [ready, setReady] = useState(false)
-  const [filtroDa, setFiltroDa] = useState('')
-  const [filtroA, setFiltroA] = useState('')
+  const [categorie, setCategorie] = useState<Categoria[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  // Carica categorie + anagrafica fornitori (servono per la categorizzazione)
+  // Filtri
+  const [dataInizio, setDataInizio] = useState('')
+  const [dataFine, setDataFine] = useState('')
+  const [tipoFilter, setTipoFilter] = useState<'all' | 'entrata' | 'uscita'>('all')
+  const [categoriaFilter, setCategoriaFilter] = useState('all')
+  const [fornitoreFilter, setFornitoreFilter] = useState('all')
+  const [origineFilter, setOrigineFilter] = useState<'all' | 'manuale' | 'auto_prenotazioni'>('all')
+
+  // ⭐ Filtri persistenti: salvati nella sessione del browser, così tornando
+  // dalla modifica / creazione di un movimento il periodo e gli altri filtri restano.
+  const FILTRI_KEY = 'ba_movimenti_filtri'
+  const [filtriPronti, setFiltriPronti] = useState(false)
+
   useEffect(() => {
-    (async () => {
-      const [catRes, fornRes] = await Promise.all([
-        supabase.from('categorie_contabili').select('id, nome').order('nome'),
-        supabase.from('fornitori').select('id, ragione_sociale').eq('attivo', true),
-      ])
-      setCategorie(catRes.data || [])
-      const forn: Fornitore[] = (fornRes.data || []).map((f: any) => ({
-        id: f.id,
-        ragione_sociale: f.ragione_sociale,
-        _tokens: tokenDistintivi(f.ragione_sociale || ''),
-      }))
-      setFornitori(forn)
-      setReady(true)
-    })()
+    try {
+      const raw = sessionStorage.getItem(FILTRI_KEY)
+      if (raw) {
+        const f = JSON.parse(raw)
+        if (typeof f.dataInizio === 'string') setDataInizio(f.dataInizio)
+        if (typeof f.dataFine === 'string') setDataFine(f.dataFine)
+        if (f.tipoFilter) setTipoFilter(f.tipoFilter)
+        if (f.categoriaFilter) setCategoriaFilter(f.categoriaFilter)
+        if (f.fornitoreFilter) setFornitoreFilter(f.fornitoreFilter)
+        if (f.origineFilter) setOrigineFilter(f.origineFilter)
+      }
+    } catch { /* sessionStorage non disponibile: si parte senza filtri */ }
+    setFiltriPronti(true)
   }, [])
 
-  // Quando i fornitori sono pronti e c'è un file in attesa, esegui il parsing
   useEffect(() => {
-    if (ready && pendingText) {
-      const parsed = parseCsvSumUp(pendingText, fornitori)
-      setRighe(parsed)
-      setPendingText('')
-      if (parsed.length === 0) {
-        toast.error('Nessuna uscita trovata nel file (o formato non riconosciuto)')
-      } else {
-        const daCat = parsed.filter(r => !r.categoria_id).length
-        toast.success(`${parsed.length} uscite caricate${daCat > 0 ? ` — ${daCat} da categorizzare` : ''}`)
-      }
-    }
-  }, [ready, pendingText, fornitori])
-
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setFileName(file.name)
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const text = String(ev.target?.result || '')
-      if (ready) {
-        const parsed = parseCsvSumUp(text, fornitori)
-        setRighe(parsed)
-        if (parsed.length === 0) {
-          toast.error('Nessuna uscita trovata nel file (o formato non riconosciuto)')
-        } else {
-          const daCat = parsed.filter(r => !r.categoria_id).length
-          toast.success(`${parsed.length} uscite caricate${daCat > 0 ? ` — ${daCat} da categorizzare` : ''}`)
-        }
-      } else {
-        // fornitori non ancora pronti: metti il testo in attesa
-        setPendingText(text)
-      }
-    }
-    reader.readAsText(file)
-  }
-
-  function updateRiga(codice: string, patch: Partial<RigaMovimento>) {
-    setRighe(prev => prev.map(r => r.codice === codice ? { ...r, ...patch } : r))
-  }
-
-  // Righe visibili in base al filtro data (estremi inclusi)
-  const righeVisibili = useMemo(() => {
-    return righe.filter(r => {
-      if (filtroDa && r.data < filtroDa) return false
-      if (filtroA && r.data > filtroA) return false
-      return true
-    })
-  }, [righe, filtroDa, filtroA])
-
-  const totaleUscite = useMemo(
-    () => righeVisibili.filter(r => r.includi && r.tipo === 'uscita').reduce((s, r) => s + r.importo, 0),
-    [righeVisibili]
-  )
-  const totaleEntrate = useMemo(
-    () => righeVisibili.filter(r => r.includi && r.tipo === 'entrata').reduce((s, r) => s + r.importo, 0),
-    [righeVisibili]
-  )
-  const daCategorizzzare = righeVisibili.filter(r => r.includi && !r.categoria_id).length
-
-  async function handleSalva() {
-    const daSalvare = righeVisibili.filter(r => r.includi)
-    if (daSalvare.length === 0) { toast.error('Nessuna riga selezionata'); return }
-
-    // Le entrate DEVONO avere una categoria esplicita (nessun default sicuro)
-    const entrateSenzaCat = daSalvare.filter(r => r.tipo === 'entrata' && !r.categoria_id)
-    if (entrateSenzaCat.length > 0) {
-      toast.error(`${entrateSenzaCat.length} entrate senza categoria. Assegna una categoria a ogni entrata prima di importare.`)
-      return
-    }
-
-    const usciteSenzaCat = daSalvare.filter(r => r.tipo === 'uscita' && !r.categoria_id).length
-    if (usciteSenzaCat > 0) {
-      if (!confirm(`Ci sono ${usciteSenzaCat} uscite senza categoria. Verranno salvate come "Altre Uscite". Procedere?`)) return
-    }
-
+    if (!filtriPronti) return
     try {
-      setSaving(true)
-      const payload = daSalvare.map(r => ({
-        data: r.data,
-        codice: r.codice,
-        descrizione: r.riferimento,
-        importo: r.importo,
-        tipo: r.tipo,
-        categoria_id: r.categoria_id || CAT.ALTRE_USCITE,
+      sessionStorage.setItem(FILTRI_KEY, JSON.stringify({
+        dataInizio, dataFine, tipoFilter, categoriaFilter, fornitoreFilter, origineFilter,
       }))
+    } catch { /* ignora */ }
+  }, [filtriPronti, dataInizio, dataFine, tipoFilter, categoriaFilter, fornitoreFilter, origineFilter])
 
-      const res = await authFetch('/api/contabilita/importa-sumup', {
-        method: 'POST',
-        body: JSON.stringify({ movimenti: payload }),
-      })
-      const result = await res.json()
-      if (!res.ok) throw new Error(result.error || 'Errore salvataggio')
+  const fetchData = useCallback(async () => {
+    setLoading(true); setError(null)
+    try {
+      const params = new URLSearchParams()
+      if (dataInizio) params.set('data_inizio', dataInizio)
+      if (dataFine) params.set('data_fine', dataFine)
+      if (tipoFilter !== 'all') params.set('tipo', tipoFilter)
+      if (categoriaFilter !== 'all') params.set('categoria_id', categoriaFilter)
+      if (fornitoreFilter !== 'all') params.set('fornitore_id', fornitoreFilter)
+      if (origineFilter !== 'all') params.set('origine', origineFilter)
 
-      toast.success(`✅ ${result.inseriti} movimenti importati${result.duplicati > 0 ? ` — ${result.duplicati} già presenti (saltati)` : ''}`)
-      setRighe([])
-      setFileName('')
+      const [mRes, cRes] = await Promise.all([
+        authFetch(`/api/contabilita/movimenti?${params.toString()}`),
+        authFetch('/api/contabilita/categorie'),
+      ])
+      if (!mRes.ok) throw new Error(`Errore ${mRes.status} caricamento movimenti`)
+      if (!cRes.ok) throw new Error(`Errore ${cRes.status} caricamento categorie`)
+      const mJson = await mRes.json()
+      const cJson = await cRes.json()
+      setMovimenti(mJson.movimenti)
+      setFornitori(mJson.fornitori)
+      setCategorie(cJson.categorie)
     } catch (err: any) {
-      toast.error(err.message || 'Errore durante il salvataggio')
+      setError(err.message)
     } finally {
-      setSaving(false)
+      setLoading(false)
     }
+  }, [dataInizio, dataFine, tipoFilter, categoriaFilter, fornitoreFilter, origineFilter])
+
+  // Carica solo dopo aver ripristinato i filtri salvati (evita un primo caricamento senza periodo)
+  useEffect(() => { if (filtriPronti) fetchData() }, [fetchData, filtriPronti])
+
+  const totals = useMemo(() => {
+    return movimenti.reduce(
+      (acc, m) => {
+        if (m.tipo === 'entrata') acc.entrate += m.totale
+        else acc.uscite += m.totale
+        return acc
+      },
+      { entrate: 0, uscite: 0 }
+    )
+  }, [movimenti])
+
+  // Elimina movimento (solo manuali — sui virtuali non c'è il pulsante)
+  const handleDelete = async (id: string, descrizione: string) => {
+    if (!confirm(`Eliminare il movimento "${descrizione}"? L'operazione non è reversibile.`)) return
+    try {
+      const res = await authFetch(`/api/contabilita/movimenti/${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const j = await res.json()
+        throw new Error(j.error || `Errore ${res.status}`)
+      }
+      fetchData()
+    } catch (err: any) {
+      alert('Errore: ' + err.message)
+    }
+  }
+
+  // Export Excel
+  const exportExcel = async () => {
+    const XLSX = (await import('xlsx')).default || (await import('xlsx'))
+    const wb = XLSX.utils.book_new()
+
+    const header = ['N°', 'Data', 'Tipo', 'Categoria', 'Descrizione', 'Fornitore', 'Imponibile', 'Aliq. IVA', 'IVA', 'Totale', 'Metodo', 'N° Doc.', 'Origine']
+    const rows = movimenti.map((m) => [
+      m.numero_progressivo ? `${m.numero_progressivo}/${m.anno}` : 'auto',
+      m.data_competenza,
+      m.tipo === 'entrata' ? 'Entrata' : 'Uscita',
+      m.categoria ? `${m.categoria.codice} — ${m.categoria.nome}` : '',
+      m.descrizione,
+      m.fornitore?.ragione_sociale || m.fornitore_descrizione || '',
+      m.imponibile,
+      m.aliquota_iva ? `${m.aliquota_iva}%` : '—',
+      m.iva,
+      m.totale,
+      m.metodo_pagamento?.nome || '',
+      m.numero_documento || '',
+      m.origine === 'manuale' ? 'Manuale' : m.origine,
+    ])
+    rows.push(['', '', 'TOTALE ENTRATE', '', '', '', '', '', '', totals.entrate, '', '', ''])
+    rows.push(['', '', 'TOTALE USCITE', '', '', '', '', '', '', totals.uscite, '', '', ''])
+    rows.push(['', '', 'SALDO', '', '', '', '', '', '', totals.entrate - totals.uscite, '', '', ''])
+
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
+    ws['!cols'] = [
+      { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 30 }, { wch: 40 }, { wch: 25 },
+      { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 18 }, { wch: 14 }, { wch: 14 },
+    ]
+    XLSX.utils.book_append_sheet(wb, ws, 'Movimenti')
+    XLSX.writeFile(wb, `movimenti_${fmtDateFile(dataInizio)}_${fmtDateFile(dataFine)}.xlsx`)
+  }
+
+  if (authLoading || !authorized) return <div className="p-8"><div className="text-gray-600">Verifica accesso...</div></div>
+  if (loading) {
+    return (
+      <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: 40, height: 40, border: `4px solid ${P.primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+          <p style={{ color: P.muted }}>Caricamento movimenti...</p>
+          <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", padding: 40, textAlign: 'center' }}>
+        <p style={{ color: P.red, fontSize: 16, fontWeight: 600 }}>Errore nel caricamento</p>
+        <p style={{ color: P.muted, marginTop: 8 }}>{error}</p>
+        <button onClick={fetchData} style={{ marginTop: 16, padding: '10px 24px', background: P.primary, color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Riprova</button>
+      </div>
+    )
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-4">
-      <div className="mb-4">
-        <h1 className="text-xl font-bold text-gray-900">Importa Estratto Conto SumUp</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Carica il file <code>Resoconto_transazioni_*.csv</code> esportato da SumUp.
-          Vengono importate solo le <strong>uscite</strong> (pagamenti). Gli accrediti PAYOUT
-          sono ignorati perché gli incassi arrivano dalle prenotazioni.
-        </p>
+    <div style={{ fontFamily: "'DM Sans', 'Segoe UI', system-ui, sans-serif", color: P.text, background: P.bg, minHeight: '100vh', padding: '24px 20px' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 12, color: P.muted, marginBottom: 2 }}>Contabilità › Movimenti</div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>Registro Movimenti</h1>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={exportExcel} style={{ fontSize: 13, fontWeight: 600, padding: '9px 16px', border: `1px solid ${P.primary}`, borderRadius: 8, cursor: 'pointer', background: P.primaryLt, color: P.primary, display: 'inline-flex', alignItems: 'center', gap: 6 }}>📊 Esporta Excel</button>
+          <Link href="/dashboard/contabilita/movimenti/nuovo">
+            <button style={{ fontSize: 13, fontWeight: 600, padding: '9px 16px', border: 'none', borderRadius: 8, cursor: 'pointer', background: P.primary, color: '#fff' }}>+ Nuovo movimento</button>
+          </Link>
+        </div>
       </div>
 
-      {/* Caricamento file */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">File CSV SumUp</label>
-        <input type="file" accept=".csv" onChange={handleFile}
-          className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:bg-blue-600 file:text-white file:text-sm file:font-medium hover:file:bg-blue-700" />
-        {fileName && <p className="text-xs text-gray-500 mt-2">File: {fileName}</p>}
+      {/* Filtri */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', background: P.card, border: `1px solid ${P.border}`, borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
+        <FilterField label="Data inizio">
+          <input type="date" value={dataInizio} onChange={(e) => setDataInizio(e.target.value)} style={inputStyle} />
+        </FilterField>
+        <FilterField label="Data fine">
+          <input type="date" value={dataFine} onChange={(e) => setDataFine(e.target.value)} style={inputStyle} />
+        </FilterField>
+        <FilterField label="Tipo">
+          <select value={tipoFilter} onChange={(e) => setTipoFilter(e.target.value as any)} style={{ ...inputStyle, minWidth: 130 }}>
+            <option value="all">Tutti</option>
+            <option value="entrata">Solo entrate</option>
+            <option value="uscita">Solo uscite</option>
+          </select>
+        </FilterField>
+        <FilterField label="Origine">
+          <select value={origineFilter} onChange={(e) => setOrigineFilter(e.target.value as any)} style={{ ...inputStyle, minWidth: 160 }}>
+            <option value="all">Tutti</option>
+            <option value="manuale">Solo manuali</option>
+            <option value="auto_prenotazioni">Solo da prenotazioni</option>
+          </select>
+        </FilterField>
+        <FilterField label="Categoria">
+          <select value={categoriaFilter} onChange={(e) => setCategoriaFilter(e.target.value)} style={{ ...inputStyle, minWidth: 200 }}>
+            <option value="all">Tutte le categorie</option>
+            {categorie
+              .filter((c) => tipoFilter === 'all' || c.tipo === tipoFilter)
+              .map((c) => (
+                <option key={c.id} value={c.id}>{c.codice} — {c.nome}</option>
+              ))}
+          </select>
+        </FilterField>
+        <FilterField label="Fornitore">
+          <select value={fornitoreFilter} onChange={(e) => setFornitoreFilter(e.target.value)} style={{ ...inputStyle, minWidth: 180 }}>
+            <option value="all">Tutti i fornitori</option>
+            {fornitori.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+          </select>
+        </FilterField>
+        <button onClick={() => { setDataInizio(''); setDataFine(''); setTipoFilter('all'); setCategoriaFilter('all'); setFornitoreFilter('all'); setOrigineFilter('all') }} style={{ fontSize: 12, padding: '8px 14px', border: `1px solid ${P.border}`, borderRadius: 8, background: 'transparent', cursor: 'pointer', color: P.muted, alignSelf: 'flex-end' }}>Reset</button>
       </div>
 
-      {righe.length > 0 && (
-        <>
-          {/* Riepilogo */}
-          <div className="grid grid-cols-4 gap-3 mb-4">
-            <div className="bg-white border border-gray-200 rounded-lg p-3">
-              <p className="text-xs text-gray-500">Movimenti</p>
-              <p className="text-2xl font-bold text-gray-900">{righeVisibili.filter(r => r.includi).length}</p>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-3">
-              <p className="text-xs text-gray-500">Totale uscite</p>
-              <p className="text-2xl font-bold text-red-600">€{totaleUscite.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</p>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-3">
-              <p className="text-xs text-gray-500">Totale entrate</p>
-              <p className="text-2xl font-bold text-green-600">€{totaleEntrate.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</p>
-            </div>
-            <div className={`border rounded-lg p-3 ${daCategorizzzare > 0 ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
-              <p className="text-xs text-gray-500">Da categorizzare</p>
-              <p className={`text-2xl font-bold ${daCategorizzzare > 0 ? 'text-amber-600' : 'text-green-600'}`}>{daCategorizzzare}</p>
+      {/* KPI cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+        <KpiCard label="Totale entrate" value={fmt(totals.entrate)} color={P.accent} />
+        <KpiCard label="Totale uscite" value={fmt(totals.uscite)} color={P.red} />
+        <KpiCard label="Saldo" value={fmt(totals.entrate - totals.uscite)} color={totals.entrate - totals.uscite >= 0 ? P.accent : P.red} />
+        <KpiCard label="N° movimenti" value={String(movimenti.length)} color={P.muted} />
+      </div>
+
+      {/* Tabella */}
+      <div style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 12, overflow: 'hidden' }}>
+        {movimenti.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 48, color: P.muted, fontSize: 15 }}>
+            Nessun movimento per i filtri selezionati.
+            <div style={{ marginTop: 12 }}>
+              <Link href="/dashboard/contabilita/movimenti/nuovo">
+                <button style={{ fontSize: 13, fontWeight: 600, padding: '8px 16px', border: 'none', borderRadius: 8, cursor: 'pointer', background: P.primary, color: '#fff' }}>+ Inserisci il primo movimento</button>
+              </Link>
             </div>
           </div>
-
-          {/* Filtro periodo */}
-          <div className="flex items-end gap-3 mb-3 flex-wrap">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Dal</label>
-              <input type="date" value={filtroDa} onChange={(e) => setFiltroDa(e.target.value)}
-                className="px-2 py-1.5 border border-gray-300 rounded text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Al</label>
-              <input type="date" value={filtroA} onChange={(e) => setFiltroA(e.target.value)}
-                className="px-2 py-1.5 border border-gray-300 rounded text-sm" />
-            </div>
-            {(filtroDa || filtroA) && (
-              <button onClick={() => { setFiltroDa(''); setFiltroA('') }}
-                className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">
-                Azzera filtro
-              </button>
-            )}
-            <p className="text-xs text-gray-500 ml-auto self-center">
-              Mostrate {righeVisibili.length} di {righe.length} righe — solo quelle nel periodo verranno importate
-            </p>
-          </div>
-
-          {/* Tabella anteprima */}
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden mb-4">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
                 <tr>
-                  <th className="text-left px-3 py-2 font-medium text-gray-600 w-8"></th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-600">Data</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-600">Tipo</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-600">Descrizione</th>
-                  <th className="text-right px-3 py-2 font-medium text-gray-600">Importo</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-600">Categoria</th>
+                  <Th>N°</Th>
+                  <Th>Data</Th>
+                  <Th>Categoria</Th>
+                  <Th>Descrizione</Th>
+                  <Th>Fornitore</Th>
+                  <Th align="right">Imponibile</Th>
+                  <Th align="right">IVA</Th>
+                  <Th align="right">Totale</Th>
+                  <Th>Conto</Th>
+                  <Th align="center" width={70}>Azioni</Th>
                 </tr>
               </thead>
               <tbody>
-                {righeVisibili.map((r) => (
-                  <tr key={r.codice} className={`border-b border-gray-100 ${!r.includi ? 'opacity-40' : ''} ${!r.categoria_id && r.includi ? 'bg-amber-50' : ''}`}>
-                    <td className="px-3 py-2">
-                      <input type="checkbox" checked={r.includi}
-                        onChange={(e) => updateRiga(r.codice, { includi: e.target.checked })} />
-                    </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
-                      {new Date(r.data).toLocaleDateString('it-IT')}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {r.tipo === 'entrata'
-                        ? <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">▲ Entrata</span>
-                        : <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-medium">▼ Uscita</span>}
-                    </td>
-                    <td className="px-3 py-2 text-gray-900">{r.riferimento}</td>
-                    <td className={`px-3 py-2 text-right font-medium whitespace-nowrap ${r.tipo === 'entrata' ? 'text-green-600' : 'text-red-600'}`}>
-                      {r.tipo === 'entrata' ? '+' : '−'}€{r.importo.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-3 py-2">
-                      <select value={r.categoria_id}
-                        onChange={(e) => updateRiga(r.codice, { categoria_id: e.target.value })}
-                        className={`w-full px-2 py-1 border rounded text-xs ${!r.categoria_id ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}`}>
-                        <option value="">⚠️ Da categorizzare...</option>
-                        {categorie.map(c => (
-                          <option key={c.id} value={c.id}>{c.nome}</option>
-                        ))}
-                      </select>
-                    </td>
+                {movimenti.map((m) => (
+                  <tr key={m.id} style={{ transition: 'background .15s' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = P.primaryLt)}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                    <Td>
+                      {m.numero_progressivo ? (
+                        <span style={{ fontVariantNumeric: 'tabular-nums', color: P.muted, fontSize: 12 }}>
+                          {m.numero_progressivo}/{m.anno}
+                        </span>
+                      ) : (
+                        <span style={{ color: P.muted, fontSize: 11, fontStyle: 'italic' }} title="Movimento generato automaticamente">auto</span>
+                      )}
+                    </Td>
+                    <Td>{fmtDate(m.data_competenza)}</Td>
+                    <Td>
+                      {m.categoria ? (
+                        <div>
+                          <div>{m.categoria.nome}</div>
+                          <div style={{ fontSize: 11, color: P.muted }}>{m.categoria.codice}</div>
+                        </div>
+                      ) : '—'}
+                    </Td>
+                    <Td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ width: 4, height: 16, background: m.tipo === 'entrata' ? P.accent : P.red, borderRadius: 2 }} />
+                        <span>{m.descrizione}</span>
+                        {m.allegato_url && <span title="Allegato presente" style={{ fontSize: 14, opacity: 0.5 }}>📎</span>}
+                      </div>
+                      {m.origine !== 'manuale' && (
+                        <div style={{ fontSize: 10, color: P.muted, marginTop: 2, fontStyle: 'italic' }}>
+                          {m.origine === 'auto_prenotazioni' ? 'da prenotazione (cassa-based)' : `generato automaticamente (${m.origine.replace('auto_', '')})`}
+                        </div>
+                      )}
+                    </Td>
+                    <Td>{m.fornitore?.ragione_sociale || m.fornitore_descrizione || <span style={{ color: P.muted }}>—</span>}</Td>
+                    <Td align="right">{fmt(m.imponibile)}</Td>
+                    <Td align="right">
+                      <span style={{ color: P.muted }}>
+                        {m.aliquota_iva > 0 ? fmt(m.iva) : '—'}
+                      </span>
+                    </Td>
+                    <Td align="right">
+                      <strong style={{ color: m.tipo === 'entrata' ? P.accent : P.red }}>
+                        {m.tipo === 'entrata' ? '+' : '−'} {fmt(m.totale)}
+                      </strong>
+                    </Td>
+                    <Td>
+                      <span style={{ fontSize: 12, color: P.muted }}>{m.metodo_pagamento?.nome || '—'}</span>
+                    </Td>
+                    <Td align="center">
+                      {m.origine === 'manuale' && (
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                          <Link href={`/dashboard/contabilita/movimenti/${m.id}`}>
+                            <button title="Modifica" style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 14, padding: 2, color: P.primary }}>✏️</button>
+                          </Link>
+                          <button title="Elimina" onClick={() => handleDelete(m.id, m.descrizione)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 14, padding: 2 }}>🗑️</button>
+                        </div>
+                      )}
+                    </Td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-
-          {/* Azioni */}
-          <div className="flex justify-end gap-3">
-            <button onClick={() => { setRighe([]); setFileName('') }}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm" disabled={saving}>
-              Annulla
-            </button>
-            <button onClick={handleSalva}
-              className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium text-sm" disabled={saving}>
-              {saving ? 'Salvataggio...' : `Importa ${righeVisibili.filter(r => r.includi).length} movimenti`}
-            </button>
-          </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
+  )
+}
+
+// ── Helpers UI ──
+const inputStyle: React.CSSProperties = {
+  fontSize: 14, padding: '8px 12px', border: `1px solid ${P.border}`, borderRadius: 8,
+  outline: 'none', background: P.bg, color: P.text, minWidth: 140,
+}
+
+function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: P.muted }}>{label}</span>
+      {children}
+    </div>
+  )
+}
+
+function KpiCard({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 12, padding: '18px 20px', borderLeft: `4px solid ${color}` }}>
+      <p style={{ fontSize: 24, fontWeight: 700, color, margin: 0 }}>{value}</p>
+      <p style={{ fontSize: 12, color: P.muted, fontWeight: 500, marginTop: 2 }}>{label}</p>
+    </div>
+  )
+}
+
+function Th({ children, align = 'left', width }: { children: React.ReactNode; align?: 'left' | 'right' | 'center'; width?: number }) {
+  return (
+    <th style={{
+      textAlign: align, padding: '12px 14px', fontWeight: 600, fontSize: 11,
+      textTransform: 'uppercase', letterSpacing: '0.04em',
+      background: P.headerBg, color: P.muted, borderBottom: `2px solid ${P.border}`,
+      whiteSpace: 'nowrap', width,
+    }}>{children}</th>
+  )
+}
+
+function Td({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' | 'center' }) {
+  return (
+    <td style={{
+      padding: '11px 14px', borderBottom: `1px solid ${P.border}`, textAlign: align,
+      fontVariantNumeric: align === 'right' ? 'tabular-nums' : 'normal',
+    }}>{children}</td>
   )
 }

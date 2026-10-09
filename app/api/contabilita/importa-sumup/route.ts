@@ -24,6 +24,7 @@ interface MovimentoInput {
   importo: number      // positivo
   tipo: 'entrata' | 'uscita'
   categoria_id: string
+  aliquota_iva?: number // ⭐ aliquota per lo scorporo (importo = IVA inclusa)
 }
 
 export async function POST(request: Request) {
@@ -54,7 +55,14 @@ export async function POST(request: Request) {
 
     // 3. Costruisci le righe — stesso set di campi del POST funzionante.
     //    iva, totale, numero_progressivo, anno → gestiti dal DB.
-    const rows = nuovi.map(m => ({
+    const rows = nuovi.map(m => {
+      // ⭐ L'importo SumUp è il totale pagato (IVA inclusa): scorporiamo l'imponibile.
+      //    iva e totale li ricalcola il DB da imponibile + aliquota (possibile ±0,01 di arrotondamento).
+      const aliquota = Number(m.aliquota_iva) || 0
+      const valida = aliquota >= 0 && aliquota <= 100
+      const a = valida ? aliquota : 0
+      const imponibile = Math.round((Number(m.importo) / (1 + a / 100)) * 100) / 100
+      return {
       data_competenza: m.data,
       data_pagamento: m.data,
       categoria_id: m.categoria_id,
@@ -62,8 +70,8 @@ export async function POST(request: Request) {
       fornitore_id: null,
       fornitore_descrizione: m.descrizione,
       descrizione: m.descrizione,
-      imponibile: m.importo,    // estratto non scorpora IVA
-      aliquota_iva: 0,
+      imponibile,
+      aliquota_iva: a,
       tipo: m.tipo === 'entrata' ? 'entrata' : 'uscita',
       numero_documento: null,
       data_documento: null,
@@ -71,7 +79,8 @@ export async function POST(request: Request) {
       origine: 'manuale',       // stesso valore del POST funzionante (evita CHECK constraint)
       note: 'Import estratto SumUp',
       riferimento_esterno: `SUMUP:${m.codice}`,
-    }))
+      }
+    })
 
     // 4. Insert in blocco
     const { data: inseriti, error } = await supabase
