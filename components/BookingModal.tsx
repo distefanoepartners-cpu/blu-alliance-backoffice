@@ -47,7 +47,6 @@ const CANALI_VENDITA: Array<{ value: string; label: string }> = [
   { value: 'piattaforma', label: 'Piattaforma esterna' },
   { value: 'sito', label: 'Sito web' },
   { value: 'chatbot', label: 'Chatbot' },
-  { value: 'ns3000', label: 'NS3000' },
   { value: 'altro', label: 'Altro' },
 ]
 
