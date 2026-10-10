@@ -92,6 +92,8 @@ export async function PUT(
     if (body.ns3000_boat_id !== undefined) updateData.ns3000_boat_id = body.ns3000_boat_id || null
     if (body.ns3000_boat_name !== undefined) updateData.ns3000_boat_name = body.ns3000_boat_name || null
     if (body.ref_affiliato !== undefined) updateData.ref_affiliato = body.ref_affiliato || null
+    if (body.crocierista !== undefined) updateData.crocierista = typeof body.crocierista === 'boolean' ? body.crocierista : null
+    if (body.canale_vendita !== undefined) updateData.canale_vendita = body.canale_vendita || null
     if (body.email_conferma_inviata !== undefined) updateData.email_conferma_inviata = body.email_conferma_inviata
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: 'Nessun campo da aggiornare' }, { status: 400 })

@@ -37,6 +37,20 @@ async function inviaNotifiche(prenotazioneId: string, lingua: string) {
   } catch (e) { console.warn('⚠️ Errore invio notifiche:', e) }
 }
 
+// ⭐ Canale di vendita: da dove arriva la prenotazione (diverso da `source`,
+// che indica il sistema d'origine BA/NS3000 e serve alla sincronizzazione).
+const CANALI_VENDITA: Array<{ value: string; label: string }> = [
+  { value: 'desk', label: 'Desk / banchina' },
+  { value: 'telefono', label: 'Telefono / WhatsApp' },
+  { value: 'email', label: 'Email' },
+  { value: 'partner', label: 'Partner / struttura' },
+  { value: 'piattaforma', label: 'Piattaforma esterna' },
+  { value: 'sito', label: 'Sito web' },
+  { value: 'chatbot', label: 'Chatbot' },
+  { value: 'ns3000', label: 'NS3000' },
+  { value: 'altro', label: 'Altro' },
+]
+
 export default function BookingModal({
   isOpen, onClose, onSave, prenotazione,
   initialDate, initialImbarcazioneId,
@@ -133,7 +147,9 @@ export default function BookingModal({
     metodo_pagamento: '', metodo_pagamento_caparra: '', metodo_pagamento_saldo: '',
     payment_lines: [] as Array<{amount: number, method: string, date: string}>,
     lingua: 'it', note_cliente: '', note_interne: '', porto_imbarco: '', ora_imbarco: '',
-    nave_id: '' as string | number
+    nave_id: '' as string | number,
+    crocierista: '' as '' | 'si' | 'no',
+    canale_vendita: 'desk' as string
   })
 
   const [saving, setSaving] = useState(false)
@@ -221,7 +237,12 @@ export default function BookingModal({
         note_interne: prenotazione.note_interne || '',
         porto_imbarco: prenotazione.porto_imbarco || '',
         ora_imbarco: prenotazione.ora_imbarco || '',
-        nave_id: prenotazione.nave_id ?? ''
+        nave_id: prenotazione.nave_id ?? '',
+        // Crocierista: sì se il flag è vero o c'è una nave; no se il flag è falso
+        crocierista: (prenotazione.crocierista === true || prenotazione.nave_id != null)
+          ? 'si'
+          : (prenotazione.crocierista === false ? 'no' : ''),
+        canale_vendita: prenotazione.canale_vendita || ''
       })
 
       // ← FIX: ripristina stato NS3000 se la prenotazione viene da NS3000
@@ -267,7 +288,7 @@ export default function BookingModal({
         caparra_ricevuta: 0, saldo_ricevuto: 0, metodo_pagamento: '',
         metodo_pagamento_caparra: '', metodo_pagamento_saldo: '', payment_lines: [], lingua: 'it',
        note_cliente: '', note_interne: '', porto_imbarco: '', ora_imbarco: '',
-        nave_id: ''
+        nave_id: '', crocierista: '', canale_vendita: 'desk'
       })
       setNaviInScalo([])
       setBoatSource(initialBoatSource || 'locale')
@@ -329,7 +350,7 @@ export default function BookingModal({
         // SOLO per prenotazioni NUOVE: in modifica va rispettata la scelta salvata,
         // inclusa "non crocierista" (nave_id vuoto), che altrimenti verrebbe
         // sovrascritta con la nave del giorno alla riapertura.
-        if (!isEdit && lista.length === 1 && !formData.nave_id) {
+        if (!isEdit && lista.length === 1 && !formData.nave_id && formData.crocierista !== 'no') {
           setFormData(prev => ({ ...prev, nave_id: lista[0].id }))
           return
         }
@@ -446,6 +467,13 @@ export default function BookingModal({
     if (boatSource === 'esterna' && !formData.fornitore_id) { toast.error('Seleziona il fornitore per la barca esterna'); return }
     if (boatSource === 'ns3000' && !ns3000BoatId) { toast.error('Seleziona una barca NS3000'); return }
     if (!formData.data_servizio) { toast.error('Seleziona una data'); return }
+    // ⭐ Crocierista obbligatorio; se sì e in porto ci sono più navi, la nave va indicata
+    if (!formData.crocierista) { toast.error('Indica se il cliente è un crocierista'); return }
+    if (formData.crocierista === 'si' && naviInScalo.length > 1 && !formData.nave_id) {
+      toast.error('Indica da quale nave arriva il cliente'); return
+    }
+    // ⭐ Canale di vendita obbligatorio sulle nuove prenotazioni
+    if (!isEdit && !formData.canale_vendita) { toast.error('Indica il canale di vendita'); return }
     if (boatSource === 'ns3000' && !clienteForm.email) { toast.error('Email cliente obbligatoria per prenotazioni NS3000'); return }
     if ((formData.bambini_over_3 + formData.bambini_under_3) > formData.numero_persone) {
       toast.error('I bambini totali non possono superare il numero di passeggeri totali')
@@ -560,7 +588,9 @@ export default function BookingModal({
           note_interne: formData.note_interne || null,
           porto_imbarco: formData.porto_imbarco || null,
           ora_imbarco: formData.ora_imbarco || null,
-          nave_id: formData.nave_id === '' ? null : Number(formData.nave_id),
+          nave_id: (formData.crocierista === 'no' || formData.nave_id === '') ? null : Number(formData.nave_id),
+          crocierista: formData.crocierista === 'si' ? true : formData.crocierista === 'no' ? false : null,
+          canale_vendita: formData.canale_vendita || null,
           tipo_tour: tipoTour,
         }
         console.log('🔍 BA SAVE DEBUG | formData.imbarcazione_id:', formData.imbarcazione_id)
@@ -706,7 +736,9 @@ export default function BookingModal({
           // ⭐ 2026-05-14 — Canale operativo
           booking_source: 'blualliance',
           // ⭐ Nave di provenienza (salvata sul record BA locale)
-          nave_id: formData.nave_id === '' ? null : Number(formData.nave_id),
+          nave_id: (formData.crocierista === 'no' || formData.nave_id === '') ? null : Number(formData.nave_id),
+          crocierista: formData.crocierista === 'si' ? true : formData.crocierista === 'no' ? false : null,
+          canale_vendita: formData.canale_vendita || null,
         }
         const res = await fetch('/api/ns3000/bookings', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -755,7 +787,9 @@ export default function BookingModal({
           note_interne: formData.note_interne || null,
           porto_imbarco: formData.porto_imbarco || null,
          ora_imbarco: formData.ora_imbarco || null,
-          nave_id: formData.nave_id === '' ? null : Number(formData.nave_id),
+          nave_id: (formData.crocierista === 'no' || formData.nave_id === '') ? null : Number(formData.nave_id),
+          crocierista: formData.crocierista === 'si' ? true : formData.crocierista === 'no' ? false : null,
+          canale_vendita: formData.canale_vendita || null,
           tipo_tour: tipoTour,
         }
         const resCreate = await authFetch('/api/prenotazioni', {
@@ -1119,47 +1153,76 @@ export default function BookingModal({
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      🚢 Nave
-                      {loadingNavi && <span className="ml-1 text-blue-600">🔄</span>}
-                    </label>
-                    <select
-                      value={formData.nave_id}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        nave_id: e.target.value === '' ? '' : Number(e.target.value)
-                      }))}
-                      disabled={!formData.data_servizio}
-                      className={`w-full px-2 py-1.5 border rounded text-sm h-[34px] ${
-                        naviInScalo.length > 1 && !formData.nave_id
-                          ? 'border-amber-400 bg-amber-50'
-                          : 'border-gray-300'
-                      }`}
-                      title={
-                        !formData.data_servizio
-                          ? 'Seleziona prima la data'
-                          : naviInScalo.length === 0
-                            ? 'Nessuna nave in scalo in questa data'
-                            : 'Nave da cui proviene il cliente'
-                      }
-                    >
-                      <option value="">
-                        {!formData.data_servizio
-                          ? 'Scegli data...'
-                          : naviInScalo.length === 0
-                            ? 'Nessuno scalo'
-                            : 'Non crocierista'}
-                      </option>
-                      {naviInScalo.map(n => (
-                        <option key={n.id} value={n.id}>
-                          {n.nome_nave} · {n.capienza_pax.toLocaleString('it-IT')}p
-                        </option>
-                      ))}
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Canale vendita {!isEdit && '*'}</label>
+                    <select value={formData.canale_vendita}
+                      onChange={(e) => setFormData(prev => ({ ...prev, canale_vendita: e.target.value }))}
+                      className={`w-full px-2 py-1.5 border rounded text-sm h-[34px] ${!formData.canale_vendita ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}`}>
+                      <option value="">{isEdit ? 'Non indicato' : 'Scegli...'}</option>
+                      {CANALI_VENDITA.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                     </select>
-                    {naviInScalo.length > 1 && !formData.nave_id && (
-                      <p className="text-[10px] text-amber-600 mt-0.5">⚠️ {naviInScalo.length} navi in scalo</p>
-                    )}
                   </div>
+                </div>
+
+                {/* ── CROCIERISTA + NAVE ── */}
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-2 md:gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">🚢 Crocierista *</label>
+                    <div className="flex gap-2">
+                      {([['si', 'Sì'], ['no', 'No']] as const).map(([val, lab]) => (
+                        <button key={val} type="button"
+                          onClick={() => setFormData(prev => ({
+                            ...prev,
+                            crocierista: val,
+                            // Sì con una sola nave in porto: preseleziona; No: niente nave
+                            nave_id: val === 'no' ? '' : (prev.nave_id || (naviInScalo.length === 1 ? naviInScalo[0].id : ''))
+                          }))}
+                          className={`flex-1 h-[34px] rounded border text-sm font-medium ${
+                            formData.crocierista === val
+                              ? 'bg-blue-600 border-blue-600 text-white'
+                              : !formData.crocierista ? 'border-amber-400 bg-amber-50 text-gray-700' : 'border-gray-300 bg-white text-gray-700'
+                          }`}>
+                          {lab}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {formData.crocierista === 'si' && (
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Nave {naviInScalo.length > 1 && '*'}
+                        {loadingNavi && <span className="ml-1 text-blue-600">🔄</span>}
+                      </label>
+                      <select
+                        value={formData.nave_id}
+                        onChange={(e) => setFormData(prev => ({
+                          ...prev,
+                          nave_id: e.target.value === '' ? '' : Number(e.target.value)
+                        }))}
+                        disabled={!formData.data_servizio || naviInScalo.length === 0}
+                        className={`w-full px-2 py-1.5 border rounded text-sm h-[34px] ${
+                          naviInScalo.length > 1 && !formData.nave_id
+                            ? 'border-amber-400 bg-amber-50'
+                            : 'border-gray-300'
+                        }`}
+                      >
+                        <option value="">
+                          {!formData.data_servizio
+                            ? 'Scegli prima la data...'
+                            : naviInScalo.length === 0
+                              ? 'Nessuna nave in scalo'
+                              : 'Scegli la nave...'}
+                        </option>
+                        {naviInScalo.map(n => (
+                          <option key={n.id} value={n.id}>
+                            {n.nome_nave} · {n.capienza_pax.toLocaleString('it-IT')}p
+                          </option>
+                        ))}
+                      </select>
+                      {naviInScalo.length > 1 && !formData.nave_id && (
+                        <p className="text-[10px] text-amber-600 mt-0.5">⚠️ {naviInScalo.length} navi in scalo: indica quella del cliente</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* ── PREZZI E PAGAMENTI ── */}

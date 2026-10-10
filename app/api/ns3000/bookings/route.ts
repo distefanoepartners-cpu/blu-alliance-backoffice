@@ -221,6 +221,8 @@ export async function POST(request: Request) {
           source: 'blualliance',
           // ⭐ Nave di provenienza (nave_nome popolato dal trigger trg_sync_nave_nome)
           nave_id: body.nave_id ?? null,
+          crocierista: typeof body.crocierista === 'boolean' ? body.crocierista : null,
+          canale_vendita: body.canale_vendita || null,
           // Riferimento incrociato con NS3000
           ns3000_booking_id: ns3000Result.booking?.id || null,
           ns3000_booking_number: ns3000Result.booking?.booking_number || null,

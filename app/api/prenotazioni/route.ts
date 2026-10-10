@@ -126,6 +126,10 @@ export async function POST(request: Request) {
       ns3000_boat_name: body.ns3000_boat_name || null,
       ref_affiliato: body.ref_affiliato || null,
       nave_id: body.nave_id ?? null,
+      // ⭐ Crocierista (true/false, null = non indicato) e canale di vendita.
+      //    Con un codice affiliato e nessun canale esplicito, il canale è "partner".
+      crocierista: typeof body.crocierista === 'boolean' ? body.crocierista : null,
+      canale_vendita: body.canale_vendita || (body.ref_affiliato ? 'partner' : null),
     }
 
     // TODO operatore: forzare fornitore_id = auth.fornitoreId

@@ -202,6 +202,7 @@ export async function POST(request: Request) {
               numero_persone: null,       // Non trasmesso
               prezzo_totale: 0,           // Non trasmesso
               note_interne: 'Prenotazione NS3000 (solo indisponibilità)',
+              canale_vendita: mappedData.source === 'ns3000' ? 'ns3000' : null,
               metodo_pagamento: null
             }])
 

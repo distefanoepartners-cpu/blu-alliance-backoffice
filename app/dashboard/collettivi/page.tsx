@@ -146,6 +146,7 @@ export default function TourCollettivi() {
     note: '', nome_cliente: '', cognome_cliente: '', email_cliente: '',
     telefono_cliente: '', servizio_id: '', stato: 'confermata',
     lingua: 'it', porto_imbarco: '', ora_imbarco: '',
+    crocierista: '' as '' | 'si' | 'no', canale_vendita: 'desk',
   })
   const [ns3000AvailableServices, setNs3000AvailableServices] = useState<Ns3000Service[]>([])
 
@@ -521,6 +522,7 @@ export default function TourCollettivi() {
       metodo_pagamento: '', note: '', nome_cliente: '', cognome_cliente: '',
       email_cliente: '', telefono_cliente: '', servizio_id: '',
       stato: 'confermata', lingua: 'it', porto_imbarco: '', ora_imbarco: '',
+    crocierista: '' as '' | 'si' | 'no', canale_vendita: 'desk',
     })
     setNs3000AvailableServices([])
     setSelectedClienteId(''); setSelectedClienteData(null); setCustomerSearch('')
@@ -541,6 +543,7 @@ export default function TourCollettivi() {
       metodo_pagamento: '', note: '', nome_cliente: '', cognome_cliente: '',
       email_cliente: '', telefono_cliente: '', servizio_id: '',
       stato: 'confermata', lingua: 'it', porto_imbarco: '', ora_imbarco: '',
+    crocierista: '' as '' | 'si' | 'no', canale_vendita: 'desk',
     })
     setNs3000AvailableServices(boat.all_services)
     setSelectedClienteId(''); setSelectedClienteData(null); setCustomerSearch('')
@@ -563,8 +566,21 @@ export default function TourCollettivi() {
   // ─────────────────────────────────────────────
   async function saveNewBooking() {
     if (!newBooking.metodo_pagamento) { toast.error('Seleziona un metodo di pagamento'); return }
+    if (!newBooking.crocierista) { toast.error('Indica se il cliente è un crocierista'); return }
+    if (!newBooking.canale_vendita) { toast.error('Indica il canale di vendita'); return }
     try {
       setSavingBooking(true)
+
+      // ⭐ Crocierista: se in porto c'è una sola nave, la assegna in automatico
+      const crociera = newBooking.crocierista === 'si'
+      let naveId: number | null = null
+      if (crociera && newBooking.data_servizio) {
+        try {
+          const rNavi = await fetch(`/api/arrivi-navi?data=${newBooking.data_servizio}`)
+          const navi = rNavi.ok ? await rNavi.json() : []
+          if (Array.isArray(navi) && navi.length === 1) naveId = navi[0].id
+        } catch { /* nave non assegnata: si può indicare dopo dal modal */ }
+      }
 
       let clienteId: string | null = selectedClienteId || null
       const clienteNome = selectedClienteData?.nome || newBooking.nome_cliente
@@ -607,6 +623,7 @@ export default function TourCollettivi() {
             caparra_ricevuta: newBooking.caparra_ricevuta || 0,
             saldo_ricevuto: newBooking.saldo_ricevuto || 0,
             stato: newBooking.stato,
+            crocierista: crociera, canale_vendita: newBooking.canale_vendita, nave_id: naveId,
           })
         })
         const result = await res.json()
@@ -634,6 +651,7 @@ export default function TourCollettivi() {
           servizio_id: newBooking.servizio_id || null, note_interne: newBooking.note || null,
           lingua: newBooking.lingua, porto_imbarco: newBooking.porto_imbarco || null,
           ora_imbarco: newBooking.ora_imbarco || null, source: 'blualliance',
+          crocierista: crociera, canale_vendita: newBooking.canale_vendita, nave_id: naveId,
         })
         if (error) throw error
         toast.success(`Prenotazione ${codice} creata!`)
@@ -1325,6 +1343,30 @@ export default function TourCollettivi() {
                     <span className="text-sm font-medium text-gray-700">Da Ricevere:</span>
                     <span className={`text-lg font-bold ${daRicevere > 0 ? 'text-red-600' : 'text-green-600'}`}>€{daRicevere.toFixed(2)}</span>
                   </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">🚢 Crocierista *</label>
+                  <select value={newBooking.crocierista} onChange={(e) => setNewBooking({ ...newBooking, crocierista: e.target.value as '' | 'si' | 'no' })}
+                    className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 ${!newBooking.crocierista ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}`}>
+                    <option value="">Scegli...</option>
+                    <option value="si">Sì</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Canale vendita *</label>
+                  <select value={newBooking.canale_vendita} onChange={(e) => setNewBooking({ ...newBooking, canale_vendita: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                    <option value="desk">Desk / banchina</option>
+                    <option value="telefono">Telefono / WhatsApp</option>
+                    <option value="email">Email</option>
+                    <option value="partner">Partner / struttura</option>
+                    <option value="piattaforma">Piattaforma esterna</option>
+                    <option value="altro">Altro</option>
+                  </select>
                 </div>
               </div>
 
