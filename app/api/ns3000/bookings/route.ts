@@ -113,8 +113,9 @@ export async function POST(request: Request) {
 
       // Servizio
       num_passengers: body.num_passengers,
-      service_type: body.booking_type === 'collective' ? 'collective' : 'charter',
-      booking_type: body.booking_type || 'tour',
+      // ⭐ FIX 2026-10-14: usa isCollective (riconosce anche 'collettivo')
+      service_type: isCollective ? 'collective' : 'charter',
+      booking_type: isCollective ? 'collective' : (body.booking_type || 'tour'),
 
       // Prezzi
       price: finalPrice,
