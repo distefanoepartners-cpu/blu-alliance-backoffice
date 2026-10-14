@@ -101,6 +101,7 @@ export default function BookingModal({
   // da soli gli UUID dei servizi tra i due DB.
   // Espandi questo map quando aggiungi nuovi servizi BA con corrispondente NS3000.
   const BA_TO_NS3000_SERVICE_MAP: Record<string, string> = {
+    'e1dda1ae-c21a-4603-b5e8-6a71c7cc51eb': 'ee21f2a6-51e2-483c-97b9-e45da67be9fb', // 01 - Tour Amalfi Collettivo FD/HD → NS3000 Amalfi e Positano Collettivo FD (aggiunto 2026-10-14)
     'ad5bf90a-14f1-4211-851a-a6bcb4900f5f': 'ee21f2a6-51e2-483c-97b9-e45da67be9fb', // 04 - Tour Amalfi-Positano Collettivo → NS3000 Amalfi e Positano Collettivo FD
     '4357c28f-a028-4f8f-8a0f-8a9c0c5a5526': '9799c07d-d9bb-490a-8ba1-df9481396ec8', // 06 - Tour Collettivo Capri → NS3000 Capri Collettivo FD
     '896ac71f-0b00-4180-a064-2cd939a37dcd': 'a34a2cc9-544a-40f5-8d96-5ea00ab93435', // 02 - Privato Amalfi → NS3000 Tour Privato Amalfi FD e HD
