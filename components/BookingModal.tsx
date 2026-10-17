@@ -124,6 +124,8 @@ export default function BookingModal({
   const [ns3000Boats, setNs3000Boats] = useState<any[]>([])
   const [ns3000BoatId, setNs3000BoatId] = useState(initialNs3000BoatId || '')
   const [ns3000TimeSlot, setNs3000TimeSlot] = useState<'full_day' | 'morning' | 'afternoon'>('full_day')
+  // ⭐ 2026-10-17 — Prezzi per persona dei collettivi NS3000 (service_id NS3000 → €/persona)
+  const [ns3000CollectivePrices, setNs3000CollectivePrices] = useState<Record<string, number>>({})
   const [ns3000Availability, setNs3000Availability] = useState<any>(null)
   const [checkingAvailability, setCheckingAvailability] = useState(false)
 
@@ -403,6 +405,24 @@ export default function BookingModal({
       }
     } catch (e) { console.error('Errore ricerca cliente:', e) }
   }
+  // ⭐ 2026-10-17 — Carica i prezzi per persona dei collettivi NS3000 per la data scelta
+  useEffect(() => {
+    if (boatSource !== 'ns3000' || !formData.data_servizio) return
+    let annullato = false
+    fetch(`/api/ns3000/collective-tours?date=${formData.data_servizio}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((rows: any[]) => {
+        if (annullato || !Array.isArray(rows)) return
+        const prezzi: Record<string, number> = {}
+        for (const t of rows) {
+          if (t?.service_id && Number(t.price_per_person) > 0) prezzi[t.service_id] = Number(t.price_per_person)
+        }
+        setNs3000CollectivePrices(prezzi)
+      })
+      .catch(() => {})
+    return () => { annullato = true }
+  }, [boatSource, formData.data_servizio])
+
   // Auto-set prezzo
   useEffect(() => {
     if (isEdit) return
@@ -424,8 +444,17 @@ export default function BookingModal({
       const selectedBoat = ns3000Boats.find((b: any) => b.boat_id === ns3000BoatId)
       let prezzoTrovato = 0
 
-      // 1. Prova pricing NS3000
-      if (selectedBoat?.pricing && formData.data_servizio) {
+      // 0. ⭐ 2026-10-17 — Tour collettivo: prezzo per persona del servizio NS3000 × passeggeri
+      //    (prima veniva cercato il prezzo charter della barca, che per i collettivi non c'è)
+      const servizioSel = servizi.find(s => s.id === formData.servizio_id)
+      const nsServiceId = formData.servizio_id ? BA_TO_NS3000_SERVICE_MAP[formData.servizio_id] : undefined
+      const isCollettivoNs = servizioSel?.tipo === 'tour_collettivo'
+      if (isCollettivoNs && nsServiceId && ns3000CollectivePrices[nsServiceId] > 0) {
+        prezzoTrovato = ns3000CollectivePrices[nsServiceId] * Math.max(1, formData.numero_persone || 1)
+      }
+
+      // 1. Prova pricing NS3000 (charter/locazione) — non per i collettivi
+      if (!prezzoTrovato && !isCollettivoNs && selectedBoat?.pricing && formData.data_servizio) {
         const month = new Date(formData.data_servizio).getMonth() + 1
         let season = 'apr_may_oct'
         if (month === 6) season = 'june'
@@ -462,7 +491,7 @@ export default function BookingModal({
 
       if (prezzoTrovato > 0) setFormData(prev => ({ ...prev, prezzo_totale: prezzoTrovato }))
     }
-  }, [formData.imbarcazione_id, formData.servizio_id, formData.numero_persone, formData.bambini_under_3, boatSource, ns3000BoatId, ns3000TimeSlot, ns3000Boats, imbarcazioni, servizi, isEdit])
+  }, [formData.imbarcazione_id, formData.servizio_id, formData.numero_persone, formData.bambini_under_3, boatSource, ns3000BoatId, ns3000TimeSlot, ns3000Boats, imbarcazioni, servizi, isEdit, ns3000CollectivePrices])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
