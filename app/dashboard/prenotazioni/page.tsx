@@ -131,8 +131,31 @@ export default function PrenotazioniPage() {
         return sum + (p.prezzo_totale || 0)
       }, 0),
       numBarche: new Set(valide.map(p => p.imbarcazione_id || p.ns3000_boat_name).filter(Boolean)).size,
+      // ⭐ Split vendite (solo informativo: la contabilità forfettari resta invariata)
+      ...(() => {
+        let valoreVendite = 0, valoreOrdinarie = 0, valoreForfettari = 0, commissioniForfettari = 0, numForfettari = 0
+        for (const p of valide) {
+          const prezzo = Number(p.prezzo_totale) || 0
+          valoreVendite += prezzo
+          const fornId = p.imbarcazioni?.fornitore_id || p.fornitore_id
+          const forn = fornId ? fornitori.find(f => f.id === fornId) : null
+          if (forn?.forfettario && (p.data_servizio || '') >= '2026-08-01') {
+            const perc = Number(forn.percentuale_commissione) || 18
+            valoreForfettari += prezzo
+            commissioniForfettari += Math.round(prezzo * perc) / 100
+            numForfettari++
+          } else {
+            valoreOrdinarie += prezzo
+          }
+        }
+        return {
+          valoreVendite, valoreOrdinarie, valoreForfettari, commissioniForfettari, numForfettari,
+          quotaSociForfettari: valoreForfettari - commissioniForfettari,
+        }
+      })(),
     }
   })()
+  const eur = (n: number) => '€' + n.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 
   function handleEdit(prenotazione: any) {
     setEditingPrenotazione(prenotazione)
@@ -408,6 +431,36 @@ export default function PrenotazioniPage() {
           <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl p-5 text-white shadow-sm">
             <div className="text-3xl font-bold">{metriche.numBarche}</div>
             <div className="text-sm text-indigo-100 mt-1">Barche Impegnate</div>
+          </div>
+        </div>
+
+        {/* ⭐ Split vendite: valore complessivo incluse le vendite dei soci forfettari (solo informativo) */}
+        <div className="mt-4 bg-white rounded-xl border border-gray-200 p-4">
+          <div className="text-sm font-semibold text-gray-700 mb-3">Split vendite</div>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 text-sm">
+            <div className="rounded-lg bg-gray-50 p-3">
+              <div className="text-xl font-bold text-gray-900">{eur(metriche.valoreVendite)}</div>
+              <div className="text-gray-500 mt-0.5">Valore complessivo vendite</div>
+            </div>
+            <div className="rounded-lg bg-gray-50 p-3">
+              <div className="text-xl font-bold text-gray-900">{eur(metriche.valoreOrdinarie)}</div>
+              <div className="text-gray-500 mt-0.5">Vendite ordinarie BA</div>
+            </div>
+            <div className="rounded-lg bg-amber-50 p-3">
+              <div className="text-xl font-bold text-amber-800">{eur(metriche.valoreForfettari)}</div>
+              <div className="text-amber-700 mt-0.5">Vendite forfettari ({metriche.numForfettari})</div>
+            </div>
+            <div className="rounded-lg bg-amber-50 p-3">
+              <div className="text-xl font-bold text-amber-800">{eur(metriche.commissioniForfettari)}</div>
+              <div className="text-amber-700 mt-0.5">di cui commissioni BA</div>
+            </div>
+            <div className="rounded-lg bg-amber-50 p-3">
+              <div className="text-xl font-bold text-amber-800">{eur(metriche.quotaSociForfettari)}</div>
+              <div className="text-amber-700 mt-0.5">di cui quota soci</div>
+            </div>
+          </div>
+          <div className="text-xs text-gray-400 mt-2">
+            Totale fatturato = vendite ordinarie + commissioni forfettari. I valori seguono i filtri attivi (periodo, stato, fornitore…).
           </div>
         </div>
       </div>
