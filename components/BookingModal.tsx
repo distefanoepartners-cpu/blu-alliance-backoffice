@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/api-client'  // ← AGGIUNGI
 import { format } from 'date-fns'
@@ -126,6 +126,9 @@ export default function BookingModal({
   const [ns3000TimeSlot, setNs3000TimeSlot] = useState<'full_day' | 'morning' | 'afternoon'>('full_day')
   // ⭐ 2026-10-17 — Prezzi per persona dei collettivi NS3000 (service_id NS3000 → €/persona)
   const [ns3000CollectivePrices, setNs3000CollectivePrices] = useState<Record<string, number>>({})
+  // ⭐ 2026-10-17 — Ultimo prezzo impostato in automatico (per non lasciare un prezzo vecchio
+  //    quando si cambia servizio, es. da collettivo a privato)
+  const ultimoPrezzoAuto = useRef<number | null>(null)
   const [ns3000Availability, setNs3000Availability] = useState<any>(null)
   const [checkingAvailability, setCheckingAvailability] = useState(false)
 
@@ -453,6 +456,15 @@ export default function BookingModal({
         prezzoTrovato = ns3000CollectivePrices[nsServiceId] * Math.max(1, formData.numero_persone || 1)
       }
 
+      // 0b. ⭐ 2026-10-17 — Tour privato / altro servizio: listino NS3000 della barca per quel servizio
+      if (!prezzoTrovato && !isCollettivoNs && nsServiceId && selectedBoat?.service_prices?.[nsServiceId] && formData.data_servizio) {
+        const m = new Date(formData.data_servizio).getMonth() + 1
+        const stagione = m === 6 ? 'june' : (m === 7 || m === 9) ? 'july_sept' : m === 8 ? 'august' : 'apr_may_oct'
+        const fascia = ns3000TimeSlot === 'full_day' ? 'full_day' : 'half_day'
+        const listino = selectedBoat.service_prices[nsServiceId]
+        prezzoTrovato = Number(listino?.[stagione]?.[fascia]) || 0
+      }
+
       // 1. Prova pricing NS3000 (charter/locazione) — non per i collettivi
       if (!prezzoTrovato && !isCollettivoNs && selectedBoat?.pricing && formData.data_servizio) {
         const month = new Date(formData.data_servizio).getMonth() + 1
@@ -489,7 +501,15 @@ export default function BookingModal({
         }
       }
 
-      if (prezzoTrovato > 0) setFormData(prev => ({ ...prev, prezzo_totale: prezzoTrovato }))
+      if (prezzoTrovato > 0) {
+        ultimoPrezzoAuto.current = prezzoTrovato
+        setFormData(prev => ({ ...prev, prezzo_totale: prezzoTrovato }))
+      } else if (ultimoPrezzoAuto.current !== null) {
+        // Nessun listino per il nuovo servizio: azzera il prezzo proposto prima (non quello inserito a mano)
+        const vecchio = ultimoPrezzoAuto.current
+        ultimoPrezzoAuto.current = null
+        setFormData(prev => (prev.prezzo_totale === vecchio ? { ...prev, prezzo_totale: 0 } : prev))
+      }
     }
   }, [formData.imbarcazione_id, formData.servizio_id, formData.numero_persone, formData.bambini_under_3, boatSource, ns3000BoatId, ns3000TimeSlot, ns3000Boats, imbarcazioni, servizi, isEdit, ns3000CollectivePrices])
 
