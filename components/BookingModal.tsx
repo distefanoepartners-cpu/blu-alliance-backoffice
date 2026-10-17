@@ -109,6 +109,11 @@ export default function BookingModal({
     'ac8e2bce-157c-4d92-b55a-7f89b5f7aad8': '68d4b6b6-d31b-45af-a76d-9ab1dc1fd54b', // 05 - Privato Capri → NS3000 Tour Privato Capri Full Day
     '9d75d2c1-4981-41a5-9199-01df2a2cb358': '79983c13-ab97-46bb-8b72-39365afa2bbf', // 07 - Locazione → NS3000 Locazione Self Drive
     '1a6534b7-0efc-4d7f-93e3-cbb45e1998a7': '96ae1f15-19fd-413f-885b-99670a08dba8', // 09 - Transfer → NS3000 Taxi Boat
+    'c9f427c2-9059-422d-81fe-9562c52ff748': 'a34a2cc9-544a-40f5-8d96-5ea00ab93435', // Tour Privato Amalfi HD → NS3000 Tour Privato Amalfi FD e HD (aggiunto 2026-10-17)
+    '85d34400-8df0-4712-9521-19db67e34af0': '410bf291-a546-430c-927d-ab57abad05e3', // 08 - Sunset Happy Hour → NS3000 Sunset Happy Hour (aggiunto 2026-10-17)
+    '904f3c41-5cbf-4c1f-89db-d319f9e6b2f8': '470d6389-f2f8-46d7-bf9c-6e76f36eb02a', // 10 - Agropoli - San Marco → NS3000 Tour Personalizzato (aggiunto 2026-10-17)
+    'c8836e2a-8aef-4521-8e22-74ed175754e4': '470d6389-f2f8-46d7-bf9c-6e76f36eb02a', // 11 - Marina di Camerota → NS3000 Tour Personalizzato (aggiunto 2026-10-17)
+    'b3bed2ec-6c30-4cb5-9328-65eef3c2249b': '470d6389-f2f8-46d7-bf9c-6e76f36eb02a', // 12 - Nerano → NS3000 Tour Personalizzato (aggiunto 2026-10-17)
   }
   const [servizi, setServizi] = useState<any[]>([])
   const [imbarcazioni, setImbarcazioni] = useState<any[]>([])
